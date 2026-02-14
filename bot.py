@@ -15,7 +15,7 @@ def get_connection():
     conn.autocommit = True
     return conn
 
-with get_connection as conn:
+with get_connection() as conn:
     with conn.cursor() as cur:
         cur.execute("""
             CREATE TABLE IF NOT EXISTS donations (
