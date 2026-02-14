@@ -1,47 +1,52 @@
 import os
 import random
+import psycopg
+import psycopg.errors
 import discord
 import json
 from discord import app_commands
-import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 
-
-conn = sqlite3.connect("donations.db", check_same_thread=False)
-cursor = conn.cursor()
-
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS donations (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    server_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    item TEXT NOT NULL,
-    quantity INTEGER NOT NULL,
-    donation_date TEXT NOT NULL
-)
-""")
-conn.commit()
-
-conn.execute("""
-CREATE INDEX IF NOT EXISTS idx_server_date
-ON donations (server_id, donation_date);
-""")
-
-conn.execute("""
-CREATE TABLE IF NOT EXISTS lottery_entries (
-    server_id TEXT NOT NULL,
-    user_id TEXT NOT NULL,
-    number INTEGER NOT NULL,
-    PRIMARY KEY (server_id, user_id)
-)
-""")
-
-conn.execute("""
-CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
-ON lottery_entries (server_id, number);
-""")
-
+DATABASE_URL = os.environ["DATABASE_URL"]
 GUILD_ID = os.getenv("DEV_SERVER_ID")
+
+conn = psycopg.connect(DATABASE_URL)
+conn.autocommit = True
+
+with conn.cursor() as cur:
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS donations (
+            id SERIAL PRIMARY KEY,
+            server_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            item TEXT NOT NULL,
+            quantity INTEGER NOT NULL,
+            donation_date TIMESTAMPTZ NOT NULL
+        );
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS lottery_entries (
+            server_id TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            number INTEGER NOT NULL,
+            PRIMARY KEY (server_id, user_id),
+            UNIQUE (server_id, number)
+        );
+    """)
+
+    cur.execute("""
+    CREATE INDEX IF NOT EXISTS idx_server_date
+    ON donations (server_id, donation_date);
+    """)
+
+
+    cur.execute("""
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
+    ON lottery_entries (server_id, number);
+    """)
+
+
 
 class Bot(discord.Client):
     def __init__(self):
@@ -92,12 +97,12 @@ async def lottery(
     user_id = str(interaction.user.id)
 
     try:
-        with conn:
-            conn.execute("""
+        with conn.cursor() as cur:
+            cur.execute("""
                 INSERT INTO lottery_entries (server_id, user_id, number)
-                VALUES (?, ?, ?)
+                VALUES (%s, %s, %s)
             """, (server_id, user_id, number))
-    except sqlite3.IntegrityError:
+    except psycopg.errors.UniqueViolation:
         await interaction.response.send_message(
             "You have already entered or that number is taken.",
             ephemeral=True
@@ -115,13 +120,13 @@ async def lottery_draw(interaction: discord.Interaction):
 
     server_id = str(interaction.guild.id)
 
-    with conn:
-        rows = conn.execute("""
+    with conn.cursor() as cur:
+        cur.execute("""
             SELECT user_id, number
             FROM lottery_entries
-            WHERE server_id = ?
-        """, (server_id,)).fetchall()
-
+            WHERE server_id = %s
+        """, (server_id,))
+        rows = cur.fetchall()
     if not rows:
         await interaction.response.send_message(
             "No lottery entries yet.",
@@ -138,9 +143,9 @@ async def lottery_draw(interaction: discord.Interaction):
             break
 
     # Clear entries after draw
-    with conn:
-        conn.execute(
-            "DELETE FROM lottery_entries WHERE server_id = ?",
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM lottery_entries WHERE server_id = %s",
             (server_id,)
         )
 
@@ -171,12 +176,12 @@ async def donate(
 
     server_id = str(interaction.guild.id)
     user_id = str(interaction.user.id)
-    now = datetime.utcnow().isoformat()
+    now = datetime.now(timezone.utc)
 
-    with conn:
-        conn.execute("""
+    with conn.cursor() as cur:
+        cur.execute("""
             INSERT INTO donations (server_id, user_id, item, quantity, donation_date)
-            VALUES (?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s)
         """, (server_id, user_id, item, quantity, now))
 
     await interaction.response.send_message(
@@ -228,22 +233,23 @@ async def report(
     query = """
         SELECT item, SUM(quantity)
         FROM donations
-        WHERE server_id = ?
+        WHERE server_id = %s
     """
     params = [server_id]
 
     if start_date:
-        query += " AND donation_date >= ?"
+        query += " AND donation_date >= %s"
         params.append(start_date)
 
     if end_date:
-        query += " AND donation_date <= ?"
+        query += " AND donation_date <= %s"
         params.append(end_date)
 
     query += " GROUP BY item ORDER BY item"
 
-    with conn:
-        rows = conn.execute(query, params).fetchall()
+    with conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
 
     if not rows:
         await interaction.response.send_message(
@@ -267,9 +273,9 @@ async def lottery_reset(interaction: discord.Interaction):
 
     server_id = str(interaction.guild.id)
 
-    with conn:
-        conn.execute(
-            "DELETE FROM lottery_entries WHERE server_id = ?",
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM lottery_entries WHERE server_id = %s",
             (server_id,)
         )
 
