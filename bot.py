@@ -172,8 +172,7 @@ async def report(
         lines.append(f"{name} donated: {qty} of {item}")
 
     await interaction.response.send_message(
-        "\n".join(lines),
-        ephemeral=True
+        "\n".join(lines)        
     )
 
 #-----------------
