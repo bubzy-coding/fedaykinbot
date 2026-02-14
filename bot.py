@@ -164,8 +164,11 @@ async def report(
     lines = ["**Donation Report:**"]
 
     for user_id, item, qty in rows:
-        member = interaction.guild.get_member(int(user_id))
-        name = member.display_name if member else user_id
+        try:
+            user = await bot.fetch_user(int(user_id))
+            name = user.display_name
+        except:
+            name = user_id
         lines.append(f"{name} donated: {qty} of {item}")
 
     await interaction.response.send_message(
