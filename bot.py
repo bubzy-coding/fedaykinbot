@@ -14,8 +14,17 @@ class Bot(discord.Client):
     async def setup_hook(self):
         if GUILD_ID:
             guild = discord.Object(id=int(GUILD_ID))
+
+            # Clear existing commands for this guild
+            self.tree.clear_commands(guild=guild)
+
+            # Copy global commands to guild
+            self.tree.copy_global_to(guild=guild)
+
+            # Sync explicitly to guild
             await self.tree.sync(guild=guild)
-            print("Synced to dev guild")
+
+            print("Force re-synced to dev guild")
         else:
             await self.tree.sync()
             print("Synced globally")
