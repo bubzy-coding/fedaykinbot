@@ -37,14 +37,13 @@ async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong", ephemeral=True)
 
 @bot.tree.command(name="donate", description="Donate items")
-@app_commands.choices(item=item_choices)
 async def donate(
     interaction: discord.Interaction,
-    item: app_commands.Choice[str],
+    item: str,
     quantity: int
 ):
     await interaction.response.send_message(
-        f"You donated {quantity} {item.value}",
+        f"You donated {quantity} {item}",
         ephemeral=True
     )
 
