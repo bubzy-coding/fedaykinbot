@@ -1,4 +1,5 @@
 import os
+import random
 import discord
 import json
 from discord import app_commands
@@ -24,6 +25,20 @@ conn.commit()
 conn.execute("""
 CREATE INDEX IF NOT EXISTS idx_server_date
 ON donations (server_id, donation_date);
+""")
+
+conn.execute("""
+CREATE TABLE IF NOT EXISTS lottery_entries (
+    server_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    PRIMARY KEY (server_id, user_id)
+)
+""")
+
+conn.execute("""
+CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
+ON lottery_entries (server_id, number);
 """)
 
 GUILD_ID = os.getenv("DEV_SERVER_ID")
@@ -61,6 +76,85 @@ with open("items_list.json", "r", encoding=("utf-8")) as f:
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong", ephemeral=True)
 
+@bot.tree.command(name="lottery", description="Enter the lottery (1-50)")
+async def lottery(
+    interaction: discord.Interaction,
+    number: int
+):
+    if number < 1 or number > 50:
+        await interaction.response.send_message(
+            "Pick a number between 1 and 50.",
+            ephemeral=True
+        )
+        return
+
+    server_id = str(interaction.guild.id)
+    user_id = str(interaction.user.id)
+
+    try:
+        with conn:
+            conn.execute("""
+                INSERT INTO lottery_entries (server_id, user_id, number)
+                VALUES (?, ?, ?)
+            """, (server_id, user_id, number))
+    except sqlite3.IntegrityError:
+        await interaction.response.send_message(
+            "You have already entered or that number is taken.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        f"{interaction.user.mention} entered the lottery with number {number} 🎟️"
+    )
+
+
+@bot.tree.command(name="lottery_draw", description="Draw the lottery winner")
+@app_commands.checks.has_permissions(administrator=True)
+async def lottery_draw(interaction: discord.Interaction):
+
+    server_id = str(interaction.guild.id)
+
+    with conn:
+        rows = conn.execute("""
+            SELECT user_id, number
+            FROM lottery_entries
+            WHERE server_id = ?
+        """, (server_id,)).fetchall()
+
+    if not rows:
+        await interaction.response.send_message(
+            "No lottery entries yet.",
+            ephemeral=True
+        )
+        return
+
+    winning_number = random.randint(1, 50)
+
+    winner = None
+    for user_id, number in rows:
+        if number == winning_number:
+            winner = user_id
+            break
+
+    # Clear entries after draw
+    with conn:
+        conn.execute(
+            "DELETE FROM lottery_entries WHERE server_id = ?",
+            (server_id,)
+        )
+
+    if winner:
+        await interaction.response.send_message(
+            f"🎉 Winning number: {winning_number}\n"
+            f"<@{winner}> wins!"
+        )
+    else:
+        await interaction.response.send_message(
+            f"🎲 Winning number: {winning_number}\n"
+            "No winner this time!"
+        )
+
 
 @bot.tree.command(name="donate", description="Donate items")
 async def donate(
@@ -86,10 +180,42 @@ async def donate(
         """, (server_id, user_id, item, quantity, now))
 
     await interaction.response.send_message(
-        f"You donated {quantity} {item}",
-        ephemeral=True
+        f"{interaction.user.display_name} donated {quantity} {item}"
     )
 
+@bot.tree.command(name="help", description="Show available commands")
+async def help_command(interaction: discord.Interaction):
+
+    help_text = """
+**Available Commands**
+
+🪵 **Donations**
+/donate <item> <quantity>  
+Donate an item to the server pool.
+
+/report [start_date] [end_date]  
+View donation totals.  
+Date format: YYYY-MM-DD
+
+🎟️ **Lottery**
+/lottery <number>  
+Enter the lottery (pick 1–50, once per round).
+
+/lottery_draw  
+Admin only. Draws the winning number and resets entries.
+
+/lottery_reset  
+Admin only. Clears all current lottery entries.
+
+⚙️ **Utility**
+/ping  
+Check if the bot is alive.
+
+/help  
+Show this message.
+"""
+
+    await interaction.response.send_message(help_text, ephemeral=True)
 
 @bot.tree.command(name="report", description="View donation report")
 async def report(
@@ -132,6 +258,23 @@ async def report(
 
     await interaction.response.send_message(
         "\n".join(lines),
+        ephemeral=True
+    )
+
+@bot.tree.command(name="lottery_reset", description="Reset the current lottery")
+@app_commands.checks.has_permissions(administrator=True)
+async def lottery_reset(interaction: discord.Interaction):
+
+    server_id = str(interaction.guild.id)
+
+    with conn:
+        conn.execute(
+            "DELETE FROM lottery_entries WHERE server_id = ?",
+            (server_id,)
+        )
+
+    await interaction.response.send_message(
+        "🎟️ Lottery has been reset for this server.",
         ephemeral=True
     )
 
