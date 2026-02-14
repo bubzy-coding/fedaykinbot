@@ -10,41 +10,44 @@ from datetime import datetime, timezone
 DATABASE_URL = os.environ["DATABASE_URL"]
 GUILD_ID = os.getenv("DEV_SERVER_ID")
 
-conn = psycopg.connect(DATABASE_URL)
-conn.autocommit = True
+def get_connection():
+    conn = psycopg.connect(DATABASE_URL)
+    conn.autocommit = True
+    return conn
 
-with conn.cursor() as cur:
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS donations (
-            id SERIAL PRIMARY KEY,
-            server_id TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            item TEXT NOT NULL,
-            quantity INTEGER NOT NULL,
-            donation_date TIMESTAMPTZ NOT NULL
-        );
-    """)
+with get_connection as conn:
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS donations (
+                id SERIAL PRIMARY KEY,
+                server_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                item TEXT NOT NULL,
+                quantity INTEGER NOT NULL,
+                donation_date TIMESTAMPTZ NOT NULL
+            );
+        """)
 
-    cur.execute("""
-        CREATE TABLE IF NOT EXISTS lottery_entries (
-            server_id TEXT NOT NULL,
-            user_id TEXT NOT NULL,
-            number INTEGER NOT NULL,
-            PRIMARY KEY (server_id, user_id),
-            UNIQUE (server_id, number)
-        );
-    """)
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS lottery_entries (
+                server_id TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                number INTEGER NOT NULL,
+                PRIMARY KEY (server_id, user_id),
+                UNIQUE (server_id, number)
+            );
+        """)
 
-    cur.execute("""
-    CREATE INDEX IF NOT EXISTS idx_server_date
-    ON donations (server_id, donation_date);
-    """)
+        cur.execute("""
+        CREATE INDEX IF NOT EXISTS idx_server_date
+        ON donations (server_id, donation_date);
+        """)
 
 
-    cur.execute("""
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
-    ON lottery_entries (server_id, number);
-    """)
+        cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
+        ON lottery_entries (server_id, number);
+        """)
 
 
 
@@ -97,16 +100,17 @@ async def donate(
     server_id = str(interaction.guild.id)
     user_id = str(interaction.user.id)
     now = datetime.now(timezone.utc)
+    
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO donations (server_id, user_id, item, quantity, donation_date)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (server_id, user_id, item, quantity, now))
 
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO donations (server_id, user_id, item, quantity, donation_date)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (server_id, user_id, item, quantity, now))
-
-    await interaction.response.send_message(
-        f"{interaction.user.display_name} donated {quantity} {item}"
-    )
+        await interaction.response.send_message(
+            f"{interaction.user.display_name} donated {quantity} {item}"
+        )
 
 @donate.autocomplete("item")
 async def item_autocomplete(interaction: discord.Interaction, current: str):
@@ -145,10 +149,10 @@ async def report(
         GROUP BY user_id, item
         ORDER BY user_id, item
     """
-
-    with conn.cursor() as cur:
-        cur.execute(query, params)
-        rows = cur.fetchall()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(query, params)
+            rows = cur.fetchall()
 
     if not rows:
         await interaction.response.send_message(
@@ -223,11 +227,12 @@ async def lottery_reset(interaction: discord.Interaction):
 
     server_id = str(interaction.guild.id)
 
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM lottery_entries WHERE server_id = %s",
-            (server_id,)
-        )
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM lottery_entries WHERE server_id = %s",
+                (server_id,)
+            )
 
     await interaction.response.send_message(
         "🎟️ Lottery has been reset for this server.",
@@ -250,11 +255,12 @@ async def lottery(
     user_id = str(interaction.user.id)
 
     try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO lottery_entries (server_id, user_id, number)
-                VALUES (%s, %s, %s)
-            """, (server_id, user_id, number))
+        with get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO lottery_entries (server_id, user_id, number)
+                    VALUES (%s, %s, %s)
+                """, (server_id, user_id, number))
     except psycopg.errors.UniqueViolation:
         await interaction.response.send_message(
             "You have already entered or that number is taken.",
@@ -273,13 +279,14 @@ async def lottery_draw(interaction: discord.Interaction):
 
     server_id = str(interaction.guild.id)
 
-    with conn.cursor() as cur:
-        cur.execute("""
-            SELECT user_id, number
-            FROM lottery_entries
-            WHERE server_id = %s
-        """, (server_id,))
-        rows = cur.fetchall()
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT user_id, number
+                FROM lottery_entries
+                WHERE server_id = %s
+            """, (server_id,))
+            rows = cur.fetchall()
     if not rows:
         await interaction.response.send_message(
             "No lottery entries yet.",
@@ -296,11 +303,12 @@ async def lottery_draw(interaction: discord.Interaction):
             break
 
     # Clear entries after draw
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM lottery_entries WHERE server_id = %s",
-            (server_id,)
-        )
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM lottery_entries WHERE server_id = %s",
+                (server_id,)
+            )
 
     if winner:
         await interaction.response.send_message(
