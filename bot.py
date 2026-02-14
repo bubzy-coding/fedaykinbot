@@ -77,9 +77,162 @@ bot = Bot()
 with open("items_list.json", "r", encoding=("utf-8")) as f:
     ITEMS = json.load(f)
 
+#-----------------
+# Donations
+#-----------------
+
+@bot.tree.command(name="donate", description="Donate items")
+async def donate(
+    interaction: discord.Interaction,
+    item: str,
+    quantity: int
+):
+    if quantity <= 0:
+        await interaction.response.send_message(
+            "Quantity must be positive.",
+            ephemeral=True
+        )
+        return
+
+    server_id = str(interaction.guild.id)
+    user_id = str(interaction.user.id)
+    now = datetime.now(timezone.utc)
+
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO donations (server_id, user_id, item, quantity, donation_date)
+            VALUES (%s, %s, %s, %s, %s)
+        """, (server_id, user_id, item, quantity, now))
+
+    await interaction.response.send_message(
+        f"{interaction.user.display_name} donated {quantity} {item}"
+    )
+
+@donate.autocomplete("item")
+async def item_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=item, value=item)
+        for item in ITEMS if current.lower() in item.lower()
+    ][:25]
+
+
+@bot.tree.command(name="report", description="View donation report")
+async def report(
+    interaction: discord.Interaction,
+    start_date: str = None,
+    end_date: str = None
+):
+    server_id = str(interaction.guild.id)
+
+    query = """
+        SELECT user_id,
+               item,
+               SUM(quantity) AS total_quantity
+        FROM donations
+        WHERE server_id = %s
+    """
+    params = [server_id]
+
+    if start_date:
+        query += " AND donation_date >= %s"
+        params.append(start_date)
+
+    if end_date:
+        query += " AND donation_date <= %s"
+        params.append(end_date)
+
+    query += """
+        GROUP BY user_id, item
+        ORDER BY user_id, item
+    """
+
+    with conn.cursor() as cur:
+        cur.execute(query, params)
+        rows = cur.fetchall()
+
+    if not rows:
+        await interaction.response.send_message(
+            "No donations in that range.",
+            ephemeral=True
+        )
+        return
+
+    lines = ["**Donation Report:**"]
+
+    for user_id, item, qty in rows:
+        member = interaction.guild.get_member(int(user_id))
+        name = member.display_name if member else user_id
+        lines.append(f"{name} donated: {qty} of {item}")
+
+    await interaction.response.send_message(
+        "\n".join(lines),
+        ephemeral=True
+    )
+
+#-----------------
+# Help / Ping
+#-----------------
+
+
 @bot.tree.command(name="ping")
 async def ping(interaction: discord.Interaction):
     await interaction.response.send_message("pong", ephemeral=True)
+
+
+@bot.tree.command(name="help", description="Show available commands")
+async def help_command(interaction: discord.Interaction):
+
+    help_text = """
+**Available Commands**
+
+🪵 **Donations**
+/donate <item> <quantity>  
+Donate an item to the server pool.
+
+/report [start_date] [end_date]  
+View donation totals.  
+Date format: YYYY-MM-DD
+
+🎟️ **Lottery**
+/lottery <number>  
+Enter the lottery (pick 1–50, once per round).
+
+/lottery_draw  
+Admin only. Draws the winning number and resets entries.
+
+/lottery_reset  
+Admin only. Clears all current lottery entries.
+
+⚙️ **Utility**
+/ping  
+Check if the bot is alive.
+
+/help  
+Show this message.
+"""
+
+    await interaction.response.send_message(help_text, ephemeral=True)
+
+#-----------------
+# Lottery
+#-----------------
+
+@bot.tree.command(name="lottery_reset", description="Reset the current lottery")
+@app_commands.checks.has_permissions(administrator=True)
+async def lottery_reset(interaction: discord.Interaction):
+
+    server_id = str(interaction.guild.id)
+
+    with conn.cursor() as cur:
+        cur.execute(
+            "DELETE FROM lottery_entries WHERE server_id = %s",
+            (server_id,)
+        )
+
+    await interaction.response.send_message(
+        "🎟️ Lottery has been reset for this server.",
+        ephemeral=True
+    )
 
 @bot.tree.command(name="lottery", description="Enter the lottery (1-50)")
 async def lottery(
@@ -160,135 +313,5 @@ async def lottery_draw(interaction: discord.Interaction):
             "No winner this time!"
         )
 
-
-@bot.tree.command(name="donate", description="Donate items")
-async def donate(
-    interaction: discord.Interaction,
-    item: str,
-    quantity: int
-):
-    if quantity <= 0:
-        await interaction.response.send_message(
-            "Quantity must be positive.",
-            ephemeral=True
-        )
-        return
-
-    server_id = str(interaction.guild.id)
-    user_id = str(interaction.user.id)
-    now = datetime.now(timezone.utc)
-
-    with conn.cursor() as cur:
-        cur.execute("""
-            INSERT INTO donations (server_id, user_id, item, quantity, donation_date)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (server_id, user_id, item, quantity, now))
-
-    await interaction.response.send_message(
-        f"{interaction.user.display_name} donated {quantity} {item}"
-    )
-
-@bot.tree.command(name="help", description="Show available commands")
-async def help_command(interaction: discord.Interaction):
-
-    help_text = """
-**Available Commands**
-
-🪵 **Donations**
-/donate <item> <quantity>  
-Donate an item to the server pool.
-
-/report [start_date] [end_date]  
-View donation totals.  
-Date format: YYYY-MM-DD
-
-🎟️ **Lottery**
-/lottery <number>  
-Enter the lottery (pick 1–50, once per round).
-
-/lottery_draw  
-Admin only. Draws the winning number and resets entries.
-
-/lottery_reset  
-Admin only. Clears all current lottery entries.
-
-⚙️ **Utility**
-/ping  
-Check if the bot is alive.
-
-/help  
-Show this message.
-"""
-
-    await interaction.response.send_message(help_text, ephemeral=True)
-
-@bot.tree.command(name="report", description="View donation report")
-async def report(
-    interaction: discord.Interaction,
-    start_date: str = None,
-    end_date: str = None
-):
-    server_id = str(interaction.guild.id)
-
-    query = """
-        SELECT item, SUM(quantity)
-        FROM donations
-        WHERE server_id = %s
-    """
-    params = [server_id]
-
-    if start_date:
-        query += " AND donation_date >= %s"
-        params.append(start_date)
-
-    if end_date:
-        query += " AND donation_date <= %s"
-        params.append(end_date)
-
-    query += " GROUP BY item ORDER BY item"
-
-    with conn.cursor() as cur:
-        cur.execute(query, params)
-        rows = cur.fetchall()
-
-    if not rows:
-        await interaction.response.send_message(
-            "No donations in that range.",
-            ephemeral=True
-        )
-        return
-
-    lines = ["**Donation Report:**"]
-    for item, qty in rows:
-        lines.append(f"{item}: {qty}")
-
-    await interaction.response.send_message(
-        "\n".join(lines),
-        ephemeral=True
-    )
-
-@bot.tree.command(name="lottery_reset", description="Reset the current lottery")
-@app_commands.checks.has_permissions(administrator=True)
-async def lottery_reset(interaction: discord.Interaction):
-
-    server_id = str(interaction.guild.id)
-
-    with conn.cursor() as cur:
-        cur.execute(
-            "DELETE FROM lottery_entries WHERE server_id = %s",
-            (server_id,)
-        )
-
-    await interaction.response.send_message(
-        "🎟️ Lottery has been reset for this server.",
-        ephemeral=True
-    )
-
-@donate.autocomplete("item")
-async def item_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=item, value=item)
-        for item in ITEMS if current.lower() in item.lower()
-    ][:25]
 
 bot.run(os.environ["DISCORD_TOKEN"])
