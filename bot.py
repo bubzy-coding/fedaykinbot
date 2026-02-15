@@ -68,15 +68,15 @@ class Bot(discord.Client):
                 for r in rows
             ]
 
-        if DEV_GUILD_ID:
-            guild = discord.Object(id=int(DEV_GUILD_ID))
-            await self.tree.sync(guild=guild)
-            return
+        # if DEV_GUILD_ID:
+        #     guild = discord.Object(id=int(DEV_GUILD_ID))
+        #     await self.tree.sync(guild=guild)
+        #     return
         
-        if any(g.id == FALLBACK_GUILD_ID for g in self.guilds):
-            guild = discord.Object(id=FALLBACK_GUILD_ID)
-            await self.tree.sync(guild=guild)
-            return
+        # if any(g.id == FALLBACK_GUILD_ID for g in self.guilds):
+        #     guild = discord.Object(id=FALLBACK_GUILD_ID)
+        #     await self.tree.sync(guild=guild)
+        #     return
 
         await self.tree.sync()
 
