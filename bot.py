@@ -2,18 +2,20 @@ import os
 import random
 import psycopg
 import psycopg.errors
+import asyncpg
 import discord
-import json
 from discord import app_commands
 from datetime import datetime, timezone
 
 DATABASE_URL = os.environ["DATABASE_URL"]
-GUILD_ID = os.getenv("DEV_SERVER_ID")
+DEV_GUILD_ID = os.getenv("DEV_SERVER_ID")
+FALLBACK_GUILD_ID = 1466549361432461436
 
 def get_connection():
     conn = psycopg.connect(DATABASE_URL)
     conn.autocommit = True
     return conn
+
 
 with get_connection() as conn:
     with conn.cursor() as cur:
@@ -24,7 +26,8 @@ with get_connection() as conn:
                 user_id TEXT NOT NULL,
                 item TEXT NOT NULL,
                 quantity INTEGER NOT NULL,
-                donation_date TIMESTAMPTZ NOT NULL
+                donation_date TIMESTAMPTZ NOT NULL,
+                is_adjustment NOT NULL`
             );
         """)
 
@@ -49,36 +52,47 @@ with get_connection() as conn:
         ON lottery_entries (server_id, number);
         """)
 
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT item_name, is_contributable FROM items;
+            """)
+            ITEMS = [{"item_name": row[0], "is_contributable": row[1]} for row in cur.fetchall()]
+            #access these as ITEMS[0]["item name"] == 'blah'
 
+def parse_date(date_str: str):
+    return datetime.strptime(date_str, "%Y-%m-%d")
 
 class Bot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
+        self.pool = None
 
     async def setup_hook(self):
-        if GUILD_ID:
-            guild = discord.Object(id=int(GUILD_ID))
-
-            # Clear existing commands for this guild
-            self.tree.clear_commands(guild=guild)
-
-            # Copy global commands to guild
-            self.tree.copy_global_to(guild=guild)
-
-            # Sync explicitly to guild
+        
+        self.pool = await asyncpg.create_pool(DATABASE_URL)
+            
+        if DEV_GUILD_ID:
+            guild = discord.Object(id=int(DEV_GUILD_ID))
             await self.tree.sync(guild=guild)
+            print("Synced to DEV_SERVER_ID")
+            return
+        
+        if any(g.id == FALLBACK_GUILD_ID for g in self.guilds):
+            guild = discord.Object(id=FALLBACK_GUILD_ID)
+            await self.tree.sync(guild=guild)
+            print("Synced to fallback specific server")
+            return
 
-            print("Force re-synced to dev guild")
-        else:
-            await self.tree.sync()
-            print("Synced globally")
+        await self.tree.sync()
+        print("Synced globally")
 
 bot = Bot()
 
-with open("items_list.json", "r", encoding=("utf-8")) as f:
-    ITEMS = json.load(f)
+# with open("items_list.json", "r", encoding=("utf-8")) as f:
+#     ITEMS = json.load(f)
 
 #-----------------
 # Donations
@@ -101,27 +115,114 @@ async def donate(
     user_id = str(interaction.user.id)
     now = datetime.now(timezone.utc)
     
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute("""
-                INSERT INTO donations (server_id, user_id, item, quantity, donation_date)
-                VALUES (%s, %s, %s, %s, %s)
-            """, (server_id, user_id, item, quantity, now))
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+                INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
+                VALUES ($1, $2, $3, $4, $5, $6)""", server_id, user_id, item, quantity, now, False)
 
         await interaction.response.send_message(
             f"{interaction.user.display_name} donated {quantity} {item}"
         )
 
+@bot.tree.command(name="balance_items", description="Balance items in inventory")
+@app_commands.checks.has_permissions(administrator=True)
+async def balance_items(
+    interaction: discord.Interaction,
+    item: str,
+    quantity: int
+):
+    server_id = str(interaction.guild.id)
+    user_id = str(interaction.user.id)
+    now = datetime.now(timezone.utc)
+    
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+                INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
+                VALUES ($1, $2, $3, $4, $5, $6)
+            """, server_id, user_id, item, quantity, now, True)
+
+        row = await conn.fetchrow(
+            """
+            SELECT SUM(quantity) AS total_items
+            FROM donations
+            WHERE server_id = $1
+            AND item = $2
+            """,
+            server_id,
+            item
+        )
+
+        total_items = row["total_items"] or 0
+            
+
+        await interaction.response.send_message(
+            f"adjusted {item} by {quantity}, current inventory {total_items}",
+            ephemeral=True
+        )
+
+@bot.tree.command(name="toggle_items", description="Toggle donatable items")
+@app_commands.checks.has_permissions(administrator=True)
+async def toggle_items(
+    interaction: discord.Interaction,
+    item: str,
+):
+    with get_connection() as conn:
+        with conn.cursor() as cur:
+            # Toggle
+            cur.execute("""
+                UPDATE items
+                SET is_contributable = NOT is_contributable
+                WHERE item_name = %s
+                RETURNING is_contributable
+            """, (item,))
+
+            result = cur.fetchone()
+
+    if result is None:
+        await interaction.response.send_message(
+            f"Item '{item}' not found.",
+            ephemeral=True
+        )
+        return
+
+    item_state = result[0]
+
+    if item_state:
+        message = f"Item {item} is now valid for donations."
+    else:
+        message = f"Item {item} is no longer valid for donations."
+
+    await interaction.response.send_message(message, ephemeral=True)
+
 @donate.autocomplete("item")
-async def item_autocomplete(interaction: discord.Interaction, current: str):
+async def donate_item_autocomplete(interaction: discord.Interaction, current: str):
     return [
-        app_commands.Choice(name=item, value=item)
-        for item in ITEMS if current.lower() in item.lower()
+        app_commands.Choice(name=item[0], value=item[0])
+        for item in ITEMS
+        if item[1]  # is_contributable == True
+        and current.lower() in item[0].lower()
+    ][:25]
+
+@balance_items.autocomplete("item")
+async def balance_item_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=item[0], value=item[0])
+        for item in ITEMS
+        if item[1]  # is_contributable == True
+        and current.lower() in item[0].lower()
+    ][:25]
+
+@toggle_items.autocomplete("item")
+async def toggle_item_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=item[0], value=item[0])
+        for item in ITEMS
+        if current.lower() in item[0].lower()
     ][:25]
 
 
-@bot.tree.command(name="report", description="View donation report")
-async def report(
+@bot.tree.command(name="report_user", description="View donation report")
+async def report_user(
     interaction: discord.Interaction,
     start_date: str = None,
     end_date: str = None
@@ -133,26 +234,48 @@ async def report(
                item,
                SUM(quantity) AS total_quantity
         FROM donations
-        WHERE server_id = %s
+        WHERE server_id = $1
+          AND is_adjustment = FALSE
     """
+
     params = [server_id]
+    param_index = 2  # because $1 is already used
 
     if start_date:
-        query += " AND donation_date >= %s"
+        try:
+            start_date = parse_date(start_date)
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid date format. Use YYYY-MM-DD.",
+                ephemeral=True
+            )
+            return
+
+        query += f" AND donation_date >= ${param_index}"
         params.append(start_date)
+        param_index += 1
 
     if end_date:
-        query += " AND donation_date <= %s"
+        try:
+            end_date = parse_date(end_date)
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid date format. Use YYYY-MM-DD.",
+                ephemeral=True
+            )
+            return
+
+        query += f" AND donation_date <= ${param_index}"
         params.append(end_date)
+        param_index += 1
 
     query += """
         GROUP BY user_id, item
         ORDER BY user_id, item
     """
-    with get_connection() as conn:
-        with conn.cursor() as cur:
-            cur.execute(query, params)
-            rows = cur.fetchall()
+
+    async with bot.pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
 
     if not rows:
         await interaction.response.send_message(
@@ -163,18 +286,92 @@ async def report(
 
     lines = ["**Donation Report:**"]
 
-    for user_id, item, qty in rows:
+    for row in rows:
+        user_id = row["user_id"]
+        item = row["item"]
+        qty = row["total_quantity"]
+
         try:
             user = await bot.fetch_user(int(user_id))
             name = user.display_name
         except:
             name = user_id
+
         lines.append(f"{name} donated: {qty} of {item}")
 
-    await interaction.response.send_message(
-        "\n".join(lines)        
-    )
+    await interaction.response.send_message("\n".join(lines))
 
+@bot.tree.command(name="inventory", description="View inventory report")
+async def inventory_report(
+    interaction: discord.Interaction,
+    start_date: str = None,
+    end_date: str = None
+):
+    server_id = str(interaction.guild.id)
+
+    query = """
+        SELECT
+            item,
+            SUM(quantity) AS total_quantity
+        FROM donations
+        WHERE server_id = $1
+    """
+
+    params = [server_id]
+    param_index = 2
+
+    if start_date:
+        try:
+            start_date = parse_date(start_date)
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid date format. Use YYYY-MM-DD.",
+                ephemeral=True
+            )
+            return
+
+        query += f" AND donation_date >= ${param_index}"
+        params.append(start_date)
+        param_index += 1
+
+    if end_date:
+        try:
+            end_date = parse_date(end_date)
+        except ValueError:
+            await interaction.response.send_message(
+                "Invalid date format. Use YYYY-MM-DD.",
+                ephemeral=True
+            )
+            return
+
+        query += f" AND donation_date <= ${param_index}"
+        params.append(end_date)
+        param_index += 1
+
+    query += """
+        GROUP BY item
+        ORDER BY item
+    """
+
+    async with bot.pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+
+    if not rows:
+        await interaction.response.send_message(
+            "No inventory in that range.",
+            ephemeral=True
+        )
+        return
+
+    lines = ["**Inventory Report:**"]
+
+    for row in rows:
+        item = row["item"]
+        qty = row["total_quantity"] or 0
+        lines.append(f"{item}: {qty}")
+
+    await interaction.response.send_message("\n".join(lines))
+    
 #-----------------
 # Help / Ping
 #-----------------
