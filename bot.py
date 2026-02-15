@@ -73,7 +73,7 @@ class Bot(discord.Client):
     async def setup_hook(self):
         
         self.pool = await asyncpg.create_pool(DATABASE_URL)
-            
+        
         if DEV_GUILD_ID:
             guild = discord.Object(id=int(DEV_GUILD_ID))
             await self.tree.sync(guild=guild)
@@ -86,8 +86,11 @@ class Bot(discord.Client):
             print("Synced to fallback specific server")
             return
 
-        await self.tree.sync()
-        print("Synced globally")
+        else:
+            await self.tree.sync()
+            print("Synced globally")
+        
+        print(self.guilds)
 
 bot = Bot()
 
