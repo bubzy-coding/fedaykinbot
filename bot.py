@@ -266,9 +266,23 @@ async def inventory_report(interaction: discord.Interaction, start_date: str = N
         await interaction.response.send_message("No inventory in that range.", ephemeral=True)
         return
 
-    lines = ["**Inventory Report:**"]
+    lines = ["\n**Inventory Report:**", "```"]
+
+    max_item_len = max(len(r['item']) for r in rows)
+    max_qty_len = max(len(str(r['total_quantity'] or 0)) for r in rows)
+
+    header = f"{'Item'.ljust(max_item_len)} | {'Qty'.rjust(max_qty_len)}"
+    separator = f"{'-' * max_item_len}-+-{'-' * max_qty_len}"
+
+    lines.append(header)
+    lines.append(separator)
+
     for r in rows:
-        lines.append(f"{r['item']}: {r['total_quantity'] or 0}")
+        item_name = r['item']
+        qty = r['total_quantity'] or 0
+        lines.append(f"{item_name.ljust(max_item_len)} | {str(qty).rjust(max_qty_len)}")
+
+    lines.append("```")
 
     await interaction.response.send_message("\n".join(lines))
 
@@ -287,17 +301,22 @@ async def help_command(interaction: discord.Interaction):
 
 🪵 **Donations**
 /donate <item> <quantity>
+/balance_items <item> <quantity> (Admin) use if item quantities need adjustment
+/toggle_items <item> (Admin) use to toggle items on/off for autocomplete
 
-/report [start_date] [end_date]
+📊 **Reports**
+use as standalone reports, or enter dates in YYYY-MM-DD format for a range
+/report_user [start_date] [end_date] gives user level report of item donations
+/inventory [start_date] [end_date] gives full inventory report
 
 🎟️ **Lottery**
-/lottery <number>
-/lottery_draw
-/lottery_reset
+/lottery <number> enter your number for this lottery draw
+/lottery_draw (Admin) run the draw! announces a winner
+/lottery_reset (Admin) resets the current lottery
 
 ⚙️ **Utility**
-/ping
-/help
+/ping check if the bot is alive
+/help you used this command to get here....
 """
     await interaction.response.send_message(help_text, ephemeral=True)
 
