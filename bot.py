@@ -264,6 +264,56 @@ async def report_user(interaction: discord.Interaction, start_date: str = None, 
 
     await interaction.response.send_message("\n".join(lines))
 
+@bot.tree.command(name="report_user_file", description="View donation report")
+@app_commands.checks.has_permissions(administrator=True)
+async def report_user_file(interaction: discord.Interaction, start_date: str = None, end_date: str = None):
+    server_id = str(interaction.guild.id)
+
+    query = """
+        SELECT user_id, item, SUM(quantity) AS total_quantity
+        FROM donations
+        WHERE server_id = $1 AND is_adjustment = FALSE
+    """
+
+    params = [server_id]
+    idx = 2
+
+    if start_date:
+        start_date = parse_date(start_date)
+        query += f" AND donation_date >= ${idx}"
+        params.append(start_date)
+        idx += 1
+
+    if end_date:
+        end_date = parse_date(end_date)
+        query += f" AND donation_date <= ${idx}"
+        params.append(end_date)
+        idx += 1
+
+    query += " GROUP BY user_id, item ORDER BY user_id, item"
+
+    async with bot.pool.acquire() as conn:
+        rows = await conn.fetch(query, *params)
+
+    if not rows:
+        await interaction.response.send_message("No donations in that range.", ephemeral=True)
+        return
+
+    # Build CSV safely
+    content = "User ID,Item,Quantity\n"
+    for r in rows:
+        content += f"{r['user_id']},{r['item']},{r['total_quantity'] or 0}\n"
+
+    file = discord.File(
+        BytesIO(content.encode("utf-8")),
+        filename="user_report.csv"
+    )
+
+    await interaction.response.send_message(
+        "Here’s your donation report export:",
+        file=file
+    )
+
 @bot.tree.command(name="inventory", description="View inventory report")
 async def inventory_report(interaction: discord.Interaction, start_date: str = None, end_date: str = None):
     server_id = str(interaction.guild.id)
@@ -339,7 +389,9 @@ async def help_command(interaction: discord.Interaction):
 📊 **Reports**
 use as standalone reports, or enter dates in YYYY-MM-DD format for a range
 /report_user [start_date] [end_date] gives user level report of item donations
+/report_user_file [start_date] [end_date] (Admin) gives user level report of item donations as a csv file
 /inventory [start_date] [end_date] gives full inventory report
+/inventory_file [start_date] [end_date] (Admin) gives full inventory report as a csv file
 
 🎟️ **Lottery**
 /lottery <number> enter your number for this lottery draw
