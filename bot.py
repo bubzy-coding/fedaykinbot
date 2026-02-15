@@ -2,6 +2,7 @@ import os
 import random
 import asyncpg
 import discord
+from io import BytesIO
 from discord import app_commands
 from datetime import datetime, timezone
 
@@ -191,6 +192,37 @@ async def toggle_item_autocomplete(interaction: discord.Interaction, current: st
 # -----------------
 # Reports
 # -----------------
+
+@bot.tree.command(name="inventory_file")
+@app_commands.checks.has_permissions(administrator=True)
+async def inventory_file(interaction: discord.Interaction):
+    async with bot.pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT item, SUM(quantity) AS total_quantity
+            FROM donations
+            WHERE server_id = $1
+            GROUP BY item
+            ORDER BY item
+        """, str(interaction.guild.id))
+
+    if not rows:
+        await interaction.response.send_message("No inventory.", ephemeral=True)
+        return
+
+    # Build CSV in memory
+    content = "Item,Quantity\n"
+    for r in rows:
+        content += f"{r['item']},{r['total_quantity'] or 0}\n"
+
+    file = discord.File(
+        BytesIO(content.encode("utf-8")),
+        filename="inventory.csv"
+    )
+
+    await interaction.response.send_message(
+        "Here’s your inventory export:",
+        file=file
+    )
 
 @bot.tree.command(name="report_user", description="View donation report")
 async def report_user(interaction: discord.Interaction, start_date: str = None, end_date: str = None):
