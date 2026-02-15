@@ -27,7 +27,7 @@ with get_connection() as conn:
                 item TEXT NOT NULL,
                 quantity INTEGER NOT NULL,
                 donation_date TIMESTAMPTZ NOT NULL,
-                is_adjustment BOOLEAN NOT NULL`
+                is_adjustment BOOLEAN NOT NULL
             );
         """)
 
