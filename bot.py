@@ -57,7 +57,8 @@ class Bot(discord.Client):
 
         # Force dev guild sync (instant)
         guild = discord.Object(id=DEV_GUILD_ID)
-        await self.tree.sync(guild=guild)
+        synced = await self.tree.sync(guild=guild)
+        print(f"Synced {len(synced)} commands to guild")    
 
         print("FORCE SYNCED TO DEV GUILD")
 
