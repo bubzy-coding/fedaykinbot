@@ -137,6 +137,12 @@ async def donate_item_autocomplete(interaction: discord.Interaction, current: st
 @bot.tree.command(name="balance_items", description="Balance items in inventory")
 @app_commands.checks.has_permissions(administrator=True)
 async def balance_items(interaction: discord.Interaction, item: str, quantity: int):
+    if item not in [i["item_name"] for i in ITEMS]:
+        await interaction.response.send_message(
+            f"{item} is not a valid item",
+            ephemeral=True
+        )
+        return
     server_id = str(interaction.guild.id)
     user_id = str(interaction.user.id)
     now = datetime.now(timezone.utc)
@@ -211,7 +217,12 @@ async def toggle_item_autocomplete(interaction: discord.Interaction, current: st
 @bot.tree.command(name="update_required", description="update required items")
 @app_commands.checks.has_permissions(administrator=True)
 async def update_required(interaction: discord.Interaction, item: str, qty: int):
-
+    if item not in [i["item_name"] for i in ITEMS]:
+        await interaction.response.send_message(
+            f"{item} is not a valid item",
+            ephemeral=True
+        )
+        return
     server_id = str(interaction.guild.id)
 
     async with bot.pool.acquire() as conn:
