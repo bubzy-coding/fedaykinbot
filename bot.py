@@ -495,6 +495,8 @@ async def help_command(interaction: discord.Interaction):
 /donate <item> <quantity>
 /balance_items <item> <quantity> (Admin) use if item quantities need adjustment
 /toggle_items <item> (Admin) use to toggle items on/off for autocomplete
+/update_required <item> <quantity> (Admin) updated required items 
+/show_required show items required by guild
 
 📊 **Reports**
 use as standalone reports, or enter dates in YYYY-MM-DD format for a range
