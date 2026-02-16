@@ -106,7 +106,12 @@ async def donate(interaction: discord.Interaction, item: str, quantity: int):
     if quantity <= 0:
         await interaction.response.send_message("Quantity must be positive.", ephemeral=True)
         return
-
+    if item not in [i["item_name"] for i in ITEMS if i["is_contributable"]]:
+        await interaction.response.send_message(
+            f"an attempt was made to donate {item}, it's not on the whitelist or isn't an item",
+            
+        )
+        return
     server_id = str(interaction.guild.id)
     user_id = str(interaction.user.id)
     now = datetime.now(timezone.utc)
@@ -442,7 +447,7 @@ async def report_user_file(interaction: discord.Interaction, start_date: str = N
         except:
             username = str(user_id)
 
-    content += f"{username},{r['item']},{r['total_quantity'] or 0}\n"
+        content += f"{username},{r['item']},{r['total_quantity'] or 0}\n"
 
     file = discord.File(
         BytesIO(content.encode("utf-8")),
