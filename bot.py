@@ -49,6 +49,15 @@ class Bot(discord.Client):
             """)
 
             await conn.execute("""
+                CREATE TABLE IF NOT EXISTS required_items (
+                    server_id TEXT NOT NULL,
+                    item_name TEXT NOT NULL,
+                    required_quantity INTEGER NOT NULL
+                    PRIMARY KEY (server_id, item_name)                    
+                );
+            """)
+
+            await conn.execute("""
                 CREATE INDEX IF NOT EXISTS idx_server_date
                 ON donations (server_id, donation_date);
             """)
@@ -56,6 +65,11 @@ class Bot(discord.Client):
             await conn.execute("""
                 CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
                 ON lottery_entries (server_id, number);
+            """)
+
+            await conn.execute("""
+                CREATE UNIQUE INDEX IF NOT EXISTS idx_required_items
+                ON required_items (server_id, item_name);
             """)
 
             rows = await conn.fetch("""
@@ -189,9 +203,105 @@ async def toggle_item_autocomplete(interaction: discord.Interaction, current: st
         if current.lower() in i["item_name"].lower()
     ][:25]
 
+@bot.tree.command(name="update_required", description="update required items")
+@app_commands.checks.has_permissions(administrator=True)
+async def update_required(interaction: discord.Interaction, item: str, qty: int):
+
+    server_id = str(interaction.guild.id)
+
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO required_items (server_id, item_name, required_quantity)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (server_id, item_name)
+            DO UPDATE SET required_quantity = EXCLUDED.required_quantity
+        """, server_id, item, qty)
+
+    msg = f"updated requirements, {item} has a required quantity of {qty}"
+    await interaction.response.send_message(msg, ephemeral=True)
+
+@toggle_items.autocomplete("item")
+async def toggle_item_required(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=i["item_name"], value=i["item_name"])
+        for i in ITEMS
+        if current.lower() in i["item_name"].lower()
+    ][:25]
+
 # -----------------
 # Reports
 # -----------------
+
+@bot.tree.command(name="show_required", description="Show required items vs current stock")
+async def show_required(interaction: discord.Interaction):
+
+    server_id = str(interaction.guild.id)
+
+    query = """
+        WITH current_inventory AS (
+            SELECT
+                server_id,
+                item,
+                SUM(quantity) AS stock_qty
+            FROM donations
+            GROUP BY server_id, item
+        )
+        SELECT
+            r.item_name,
+            r.required_quantity,
+            COALESCE(i.stock_qty, 0) AS stock_qty,
+            r.required_quantity - COALESCE(i.stock_qty, 0) AS remaining
+        FROM required_items r
+        LEFT JOIN current_inventory i
+            ON i.server_id = r.server_id
+           AND i.item = r.item_name
+        WHERE r.server_id = $1
+        ORDER BY r.item_name;
+    """
+
+    async with bot.pool.acquire() as conn:
+        rows = await conn.fetch(query, server_id)
+
+    if not rows:
+        await interaction.response.send_message("No required items set.", ephemeral=True)
+        return
+
+    # Table formatting
+    lines = ["\n**Required Items Status:**", "```"]
+
+    max_item_len = max(len(r["item_name"]) for r in rows)
+    max_req_len = max(len(str(r["required_quantity"])) for r in rows)
+    max_stock_len = max(len(str(r["stock_qty"])) for r in rows)
+    max_rem_len = max(len(str(r["remaining"])) for r in rows)
+
+    header = (
+        f"{'Item'.ljust(max_item_len)} | "
+        f"{'Req'.rjust(max_req_len)} | "
+        f"{'Stock'.rjust(max_stock_len)} | "
+        f"{'Remain'.rjust(max_rem_len)}"
+    )
+
+    separator = (
+        f"{'-' * max_item_len}-+-"
+        f"{'-' * max_req_len}-+-"
+        f"{'-' * max_stock_len}-+-"
+        f"{'-' * max_rem_len}"
+    )
+
+    lines.append(header)
+    lines.append(separator)
+
+    for r in rows:
+        lines.append(
+            f"{r['item_name'].ljust(max_item_len)} | "
+            f"{str(r['required_quantity']).rjust(max_req_len)} | "
+            f"{str(r['stock_qty']).rjust(max_stock_len)} | "
+            f"{str(r['remaining']).rjust(max_rem_len)}"
+        )
+
+    lines.append("```")
+
+    await interaction.response.send_message("\n".join(lines))
 
 @bot.tree.command(name="inventory_file")
 @app_commands.checks.has_permissions(administrator=True)
