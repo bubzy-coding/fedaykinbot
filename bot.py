@@ -168,12 +168,36 @@ class Bot(discord.Client):
                 WHERE server_id = $1
             """, server_id)
 
-        if existing:
-            channel = self.get_channel(int(existing["channel_id"]))
-            message = await channel.fetch_message(int(existing["message_id"]))
-            await message.edit(content=content)
+        if not existing:
+            # No scoreboard configured
+            return
+
+        channel = self.get_channel(int(existing["channel_id"]))
+
+        if existing["message_id"] is None:
+            # Channel set but message not created yet
+            message = await channel.send(content)
+
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    UPDATE scoreboard_messages
+                    SET message_id = $1
+                    WHERE server_id = $2
+                """, str(message.id), server_id)
         else:
-            message = await interaction.channel.send(content)
+            try:
+                message = await channel.fetch_message(int(existing["message_id"]))
+                await message.edit(content=content)
+            except:
+                # Message deleted manually, recreate
+                message = await channel.send(content)
+
+                async with self.pool.acquire() as conn:
+                    await conn.execute("""
+                        UPDATE scoreboard_messages
+                        SET message_id = $1
+                        WHERE server_id = $2
+                    """, str(message.id), server_id)
 
             async with self.pool.acquire() as conn:
                 await conn.execute("""
