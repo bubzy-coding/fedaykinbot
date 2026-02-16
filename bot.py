@@ -141,7 +141,7 @@ class Bot(discord.Client):
 
             for rank, row in enumerate(rows, start=1):
                 user_id = int(row["user_id"])
-                total = row["total"]
+                total = row["total_value"]
 
                 try:
                     member = await interaction.guild.fetch_member(user_id)
