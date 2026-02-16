@@ -199,12 +199,6 @@ class Bot(discord.Client):
                         WHERE server_id = $2
                     """, str(message.id), server_id)
 
-            async with self.pool.acquire() as conn:
-                await conn.execute("""
-                    INSERT INTO scoreboard_messages (server_id, channel_id, message_id)
-                    VALUES ($1, $2, $3)
-                """, server_id, str(message.channel.id), str(message.id))
-
 bot = Bot()
 
 # -----------------
