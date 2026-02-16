@@ -4,7 +4,7 @@ import asyncpg
 import discord
 from io import BytesIO
 from discord import app_commands
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 DEV_GUILD_ID = os.getenv("DEV_SERVER_ID")
@@ -15,13 +15,19 @@ ITEMS = []
 def parse_date(date_str: str):
     return datetime.strptime(date_str, "%Y-%m-%d")
 
+def get_current_period_start():
+    now = datetime.now(timezone.utc)
+    days_since_tuesday = (now.weekday() - 1) % 7
+    start = now - timedelta(days=days_since_tuesday)
+    return start.replace(hour=0, minute=0, second=0, microsecond=0)
+
 class Bot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.pool = None
-
+        
     async def setup_hook(self):
         self.pool = await asyncpg.create_pool(DATABASE_URL)
 
@@ -35,6 +41,14 @@ class Bot(discord.Client):
                     quantity INTEGER NOT NULL,
                     donation_date TIMESTAMPTZ NOT NULL,
                     is_adjustment BOOLEAN NOT NULL
+                );
+            """)
+
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS scoreboard_messages (
+                    server_id TEXT PRIMARY KEY,
+                    channel_id TEXT NOT NULL,
+                    message_id TEXT NOT NULL
                 );
             """)
 
@@ -73,7 +87,7 @@ class Bot(discord.Client):
             """)
 
             rows = await conn.fetch("""
-                SELECT item_name, is_contributable
+                SELECT item_name, is_contributable, value
                 FROM items;
             """)
 
@@ -94,6 +108,78 @@ class Bot(discord.Client):
         #     return
 
         await self.tree.sync()
+    
+    async def update_scoreboard(self, interaction: discord.Interaction):
+        server_id = str(interaction.guild.id)
+
+        # --- Calculate start of current Tuesday ---
+        now = datetime.now(timezone.utc)
+        days_since_tuesday = (now.weekday() - 1) % 7
+        period_start = (now - timedelta(days=days_since_tuesday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        # --- Get totals ---
+        async with self.pool.acquire() as conn:
+            rows = await conn.fetch("""
+                SELECT d.user_id,
+                    SUM(d.quantity * i.donation_value) AS total_value
+                    FROM donations d
+                    JOIN items i ON d.item = i.item_name
+                    WHERE d.server_id = $1
+                        AND d.donation_date >= $2
+                        AND NOT d.is_adjustment
+                    GROUP BY d.user_id
+                    ORDER BY total_value DESC;
+            """, server_id, period_start)
+
+        # --- Build content ---
+        if not rows:
+            content = "🏆 **Weekly Scoreboard (since Tuesday)**\n\nNo donations yet."
+        else:
+            lines = ["🏆 **Weekly Scoreboard (since Tuesday)**\n"]
+
+            for rank, row in enumerate(rows, start=1):
+                user_id = int(row["user_id"])
+                total = row["total"]
+
+                try:
+                    member = await interaction.guild.fetch_member(user_id)
+                    name = member.display_name
+                except:
+                    name = str(user_id)
+
+                if rank == 1:
+                    lines.append(f"🏅{rank}. {name} — {total}")
+                elif rank == 2:
+                    lines.append(f"🥈{rank}. {name} — {total}")
+                elif rank == 3:
+                    lines.append(f"🥉{rank}. {name} — {total}")
+                else:
+                    lines.append(f"{rank}. {name} — {total}")
+
+            content = "\n".join(lines)
+
+        # --- Check for existing scoreboard message ---
+        async with self.pool.acquire() as conn:
+            existing = await conn.fetchrow("""
+                SELECT channel_id, message_id
+                FROM scoreboard_messages
+                WHERE server_id = $1
+            """, server_id)
+
+        if existing:
+            channel = self.get_channel(int(existing["channel_id"]))
+            message = await channel.fetch_message(int(existing["message_id"]))
+            await message.edit(content=content)
+        else:
+            message = await interaction.channel.send(content)
+
+            async with self.pool.acquire() as conn:
+                await conn.execute("""
+                    INSERT INTO scoreboard_messages (server_id, channel_id, message_id)
+                    VALUES ($1, $2, $3)
+                """, server_id, str(message.channel.id), str(message.id))
 
 bot = Bot()
 
@@ -121,6 +207,9 @@ async def donate(interaction: discord.Interaction, item: str, quantity: int):
             INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
             VALUES ($1, $2, $3, $4, $5, $6)
         """, server_id, user_id, item, quantity, now, False)
+
+    #update scoreboard
+    await bot.update_scoreboard(interaction)
 
     await interaction.response.send_message(
         f"{interaction.user.display_name} donated {quantity} {item}"
@@ -243,6 +332,75 @@ async def update_required_autocomplete(interaction: discord.Interaction, current
         for i in ITEMS
         if current.lower() in i["item_name"].lower()
     ][:25]
+
+#setting item values for donations
+async def set_item_value_function(interaction, item: str, value: int):
+    if item not in [i["item_name"] for i in ITEMS]:
+        await interaction.response.send_message(
+            f"{item} is not a valid item",
+            ephemeral=True
+        )
+        return
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+            UPDATE items
+            SET donate_value = ($1)
+            WHERE item_name = ($2)
+        """, value, item)
+
+    msg = f"updated item values, {item} has adonation value of {value}"
+    await interaction.response.send_message(msg, ephemeral=True)
+
+
+@bot.tree.command(name="set_item_value", description="update donation value for items")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_item_value(interaction: discord.Interaction, item: str, value: int):
+    await set_item_value_function(interaction, item, value)
+
+@bot.tree.command(name="siv", description="alias for update donation value for items")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_item_value_alias(interaction: discord.Interaction, item: str, value: int):
+    await set_item_value_function(interaction, item, value)
+
+@set_item_value.autocomplete("item")
+async def set_item_value_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=i["item_name"], value=i["item_name"])
+        for i in ITEMS
+        if current.lower() in i["item_name"].lower()
+    ][:25]
+
+@set_item_value_alias.autocomplete("item")
+async def set_item_value_alias_autocomplete(interaction: discord.Interaction, current: str):
+    return [
+        app_commands.Choice(name=i["item_name"], value=i["item_name"])
+        for i in ITEMS
+        if current.lower() in i["item_name"].lower()
+    ][:25]
+
+@bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_scoreboard_channel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    server_id = str(interaction.guild.id)
+
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO scoreboard_messages (server_id, channel_id, message_id)
+            VALUES ($1, $2, NULL)
+            ON CONFLICT (server_id)
+            DO UPDATE SET
+                channel_id = EXCLUDED.channel_id,
+                message_id = NULL
+        """, server_id, str(channel.id))
+
+    await interaction.response.send_message(
+        f"Scoreboard channel set to {channel.mention}. "
+        "A new scoreboard message will be created on the next update.",
+        ephemeral=True
+    )
 
 # -----------------
 # Reports
