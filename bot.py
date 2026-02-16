@@ -123,7 +123,7 @@ class Bot(discord.Client):
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT d.user_id,
-                    SUM(d.quantity * i.donation_value) AS total_value
+                    SUM(d.quantity * i.donate_value) AS total_value
                     FROM donations d
                     JOIN items i ON d.item = i.item_name
                     WHERE d.server_id = $1
