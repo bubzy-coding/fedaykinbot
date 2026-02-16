@@ -87,7 +87,7 @@ class Bot(discord.Client):
             """)
 
             rows = await conn.fetch("""
-                SELECT item_name, is_contributable, value
+                SELECT item_name, is_contributable, donate_value
                 FROM items;
             """)
 
@@ -97,7 +97,7 @@ class Bot(discord.Client):
                 for r in rows
             ]
 
-        # if DEV_GUILD_ID:
+        # if DEV_GUILD_ID:j
         #     guild = discord.Object(id=int(DEV_GUILD_ID))
         #     await self.tree.sync(guild=guild)
         #     return
