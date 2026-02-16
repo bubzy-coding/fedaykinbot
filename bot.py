@@ -52,7 +52,7 @@ class Bot(discord.Client):
                 CREATE TABLE IF NOT EXISTS required_items (
                     server_id TEXT NOT NULL,
                     item_name TEXT NOT NULL,
-                    required_quantity INTEGER NOT NULL
+                    required_quantity INTEGER NOT NULL,
                     PRIMARY KEY (server_id, item_name)                    
                 );
             """)
