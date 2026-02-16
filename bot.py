@@ -220,8 +220,8 @@ async def update_required(interaction: discord.Interaction, item: str, qty: int)
     msg = f"updated requirements, {item} has a required quantity of {qty}"
     await interaction.response.send_message(msg, ephemeral=True)
 
-@toggle_items.autocomplete("item")
-async def toggle_item_required(interaction: discord.Interaction, current: str):
+@update_required.autocomplete("item")
+async def update_required_autocomplete(interaction: discord.Interaction, current: str):
     return [
         app_commands.Choice(name=i["item_name"], value=i["item_name"])
         for i in ITEMS
@@ -269,16 +269,31 @@ async def show_required(interaction: discord.Interaction):
     # Table formatting
     lines = ["\n**Required Items Status:**", "```"]
 
-    max_item_len = max(len(r["item_name"]) for r in rows)
-    max_req_len = max(len(str(r["required_quantity"])) for r in rows)
-    max_stock_len = max(len(str(r["stock_qty"])) for r in rows)
-    max_rem_len = max(len(str(r["remaining"])) for r in rows)
+    max_item_len = max(
+    max(len(r["item_name"]) for r in rows),
+    len("Item")
+    )
+
+    max_req_len = max(
+        max(len(str(r["required_quantity"])) for r in rows),
+        len("Required")
+    )
+
+    max_stock_len = max(
+        max(len(str(r["stock_qty"])) for r in rows),
+        len("Stock")
+    )
+
+    max_rem_len = max(
+        max(len(str(r["remaining"])) for r in rows),
+        len("To collect")
+    )
 
     header = (
         f"{'Item'.ljust(max_item_len)} | "
-        f"{'Req'.rjust(max_req_len)} | "
+        f"{'Required'.rjust(max_req_len)} | "
         f"{'Stock'.rjust(max_stock_len)} | "
-        f"{'Remain'.rjust(max_rem_len)}"
+        f"{'To collect'.rjust(max_rem_len)}"
     )
 
     separator = (
@@ -370,7 +385,13 @@ async def report_user(interaction: discord.Interaction, start_date: str = None, 
 
     lines = ["**Donation Report:**"]
     for r in rows:
-        lines.append(f"{r['user_id']} donated: {r['total_quantity']} of {r['item']}")
+        user_id = int(r["user_id"])
+        try:
+            user = await bot.fetch_user(user_id)
+            username = user.display_name
+        except:
+            username = str(user_id)
+        lines.append(f"{username} donated: {r['total_quantity']} of {r['item']}")
 
     await interaction.response.send_message("\n".join(lines))
 
@@ -410,9 +431,18 @@ async def report_user_file(interaction: discord.Interaction, start_date: str = N
         return
 
     # Build CSV safely
-    content = "User ID,Item,Quantity\n"
+    content = "User,Item,Quantity\n"
+
     for r in rows:
-        content += f"{r['user_id']},{r['item']},{r['total_quantity'] or 0}\n"
+        user_id = int(r["user_id"])
+
+        try:
+            user = await bot.fetch_user(user_id)
+            username = user.display_name
+        except:
+            username = str(user_id)
+
+    content += f"{username},{r['item']},{r['total_quantity'] or 0}\n"
 
     file = discord.File(
         BytesIO(content.encode("utf-8")),
