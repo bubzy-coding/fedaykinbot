@@ -117,26 +117,26 @@ async def on_message(message: discord.Message):
 
     results = []
     async with pool.acquire() as conn:
-
-        for line in lines:
-            parsed = parse_line(line)
-            if not parsed:
-                results.append(f"`{line}` → ❌ Invalid format")
-                continue
-
-            symbol, qty, item_text = parsed
-            if symbol == "~":
-                if not message.author.guild_permissions.administrator:
-                    results.append("❌ You are not allowed to use ~")
+        async with conn.transaction():
+            for line in lines:
+                parsed = parse_line(line)
+                if not parsed:
+                    results.append(f"`{line}` → ❌ Invalid format")
                     continue
 
-            guess = guess_item(item_text)
+                symbol, qty, item_text = parsed
+                if symbol == "~":
+                    if not message.author.guild_permissions.administrator:
+                        results.append("❌ You are not allowed to use ~")
+                        continue
 
-            if guess:
-                results.append(f"{qty:+} **{guess}**")
-                await handle_db(symbol, qty, guess, message, conn)
-            else:
-                results.append(f"{qty:+} `{item_text}` → ❌ No match")
+                guess = guess_item(item_text)
+
+                if guess:
+                    results.append(f"{qty:+} **{guess}**")
+                    await handle_db(symbol, qty, guess, message, conn)
+                else:
+                    results.append(f"{qty:+} `{item_text}` → ❌ No match")
 
     # for result in results:
     #      await output_channel.send(f"adding {parse_line(result)}")
