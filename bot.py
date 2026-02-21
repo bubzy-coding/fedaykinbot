@@ -92,20 +92,19 @@ async def on_message(message: discord.Message):
     results = []
 
     for line in lines:
-        for line in lines:
-            parsed = parse_line(line)
-            if not parsed:
-                results.append(f"`{line}` → ❌ Invalid format")
-                continue
+        parsed = parse_line(line)
+        if not parsed:
+            results.append(f"`{line}` → ❌ Invalid format")
+            continue
 
         symbol, qty, item_text = parsed
         if symbol == "~":
             if not message.author.guild_permissions.administrator:
                 results.append("❌ You are not allowed to use ~")
                 continue
-            
+
         guess = guess_item(item_text)
-    
+
         if guess:
             results.append(f"{qty:+} **{guess}**")
         else:
