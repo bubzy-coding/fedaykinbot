@@ -183,7 +183,7 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
         await conn.execute("""
             INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
             VALUES ($1, $2, $3, $4, $5, $6)
-        """, server_id, str(message.author.id), item_name, qty, now, False)
+        """, server_id, message.author.id, item_name, qty, now, False)
 
 
 
