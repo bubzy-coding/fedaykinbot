@@ -1,810 +1,95 @@
 import os
-import random
-import asyncpg
 import discord
-from io import BytesIO
-from discord import app_commands
-from datetime import datetime, timezone, timedelta
+import asyncpg
+from rapidfuzz import process
 
+TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
-DEV_GUILD_ID = os.getenv("DEV_SERVER_ID")
-FALLBACK_GUILD_ID = 1466549361432461436
+
+INPUT_CHANNEL_ID = 1472226231830450261   # channel users type in
+OUTPUT_CHANNEL_ID = 1473069420548198544  # where guesses get posted
 
 ITEMS = []
+pool = None
 
-def parse_date(date_str: str):
-    return datetime.strptime(date_str, "%Y-%m-%d")
 
-def get_current_period_start():
-    now = datetime.now(timezone.utc)
-    days_since_tuesday = (now.weekday() - 1) % 7
-    start = now - timedelta(days=days_since_tuesday)
-    return start.replace(hour=0, minute=0, second=0, microsecond=0)
+# ---------- DB LOAD ----------
+
+async def load_items():
+    global ITEMS
+    async with pool.acquire() as conn:
+        rows = await conn.fetch("""
+            SELECT item_name
+            FROM items
+            WHERE is_contributable = TRUE
+        """)
+        ITEMS = [row["item_name"] for row in rows]
+
+
+# ---------- FUZZY MATCH ----------
+
+def guess_item(user_input: str):
+    if not ITEMS:
+        return None
+
+    match = process.extractOne(user_input, ITEMS)
+    if match:
+        best, score, _ = match
+        if score > 65:   # tune this
+            return best
+    return None
+
+
+# ---------- DISCORD ----------
 
 class Bot(discord.Client):
     def __init__(self):
         intents = discord.Intents.default()
+        intents.message_content = True
         super().__init__(intents=intents)
-        self.tree = app_commands.CommandTree(self)
-        self.pool = None
-        
+
     async def setup_hook(self):
-        self.pool = await asyncpg.create_pool(DATABASE_URL)
+        global pool
+        pool = await asyncpg.create_pool(DATABASE_URL)
+        await load_items()
+        print(f"Loaded {len(ITEMS)} items")
 
-        async with self.pool.acquire() as conn:
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS donations (
-                    id SERIAL PRIMARY KEY,
-                    server_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    item TEXT NOT NULL,
-                    quantity INTEGER NOT NULL,
-                    donation_date TIMESTAMPTZ NOT NULL,
-                    is_adjustment BOOLEAN NOT NULL
-                );
-            """)
-
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS scoreboard_messages (
-                    server_id TEXT PRIMARY KEY,
-                    channel_id TEXT NOT NULL,
-                    message_id TEXT NOT NULL
-                );
-            """)
-
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS lottery_entries (
-                    server_id TEXT NOT NULL,
-                    user_id TEXT NOT NULL,
-                    number INTEGER NOT NULL,
-                    PRIMARY KEY (server_id, user_id),
-                    UNIQUE (server_id, number)
-                );
-            """)
-
-            await conn.execute("""
-                CREATE TABLE IF NOT EXISTS required_items (
-                    server_id TEXT NOT NULL,
-                    item_name TEXT NOT NULL,
-                    required_quantity INTEGER NOT NULL,
-                    PRIMARY KEY (server_id, item_name)                    
-                );
-            """)
-
-            await conn.execute("""
-                CREATE INDEX IF NOT EXISTS idx_server_date
-                ON donations (server_id, donation_date);
-            """)
-
-            await conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_server_number
-                ON lottery_entries (server_id, number);
-            """)
-
-            await conn.execute("""
-                CREATE UNIQUE INDEX IF NOT EXISTS idx_required_items
-                ON required_items (server_id, item_name);
-            """)
-
-            rows = await conn.fetch("""
-                SELECT item_name, is_contributable, donate_value
-                FROM items;
-            """)
-
-            global ITEMS
-            ITEMS = [
-                {"item_name": r["item_name"], "is_contributable": r["is_contributable"]}
-                for r in rows
-            ]
-
-        # if DEV_GUILD_ID:j
-        #     guild = discord.Object(id=int(DEV_GUILD_ID))
-        #     await self.tree.sync(guild=guild)
-        #     return
-        
-        # if any(g.id == FALLBACK_GUILD_ID for g in self.guilds):
-        #     guild = discord.Object(id=FALLBACK_GUILD_ID)
-        #     await self.tree.sync(guild=guild)
-        #     return
-
-        await self.tree.sync()
-    
-    async def update_scoreboard(self, interaction: discord.Interaction):
-        server_id = str(interaction.guild.id)
-
-        # --- Calculate start of current Tuesday ---
-        now = datetime.now(timezone.utc)
-        days_since_tuesday = (now.weekday() - 1) % 7
-        period_start = (now - timedelta(days=days_since_tuesday)).replace(
-            hour=0, minute=0, second=0, microsecond=0
-        )
-
-        # --- Get totals ---
-        async with self.pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT d.user_id,
-                    SUM(d.quantity * i.donate_value) AS total_value
-                    FROM donations d
-                    JOIN items i ON d.item = i.item_name
-                    WHERE d.server_id = $1
-                        AND d.donation_date >= $2
-                        AND NOT d.is_adjustment
-                    GROUP BY d.user_id
-                    ORDER BY total_value DESC;
-            """, server_id, period_start)
-
-        # --- Build content ---
-        if not rows:
-            content = "🏆 **Weekly Scoreboard (since Tuesday)**\n\nNo donations yet."
-        else:
-            lines = ["🏆 **Weekly Scoreboard (since Tuesday)**\n"]
-
-            for rank, row in enumerate(rows, start=1):
-                user_id = int(row["user_id"])
-                total = row["total_value"]
-
-                try:
-                    member = await interaction.guild.fetch_member(user_id)
-                    name = member.display_name
-                except:
-                    name = str(user_id)
-
-                if rank == 1:
-                    lines.append(f"🏅{rank}. {name} — {total}")
-                elif rank == 2:
-                    lines.append(f"🥈{rank}. {name} — {total}")
-                elif rank == 3:
-                    lines.append(f"🥉{rank}. {name} — {total}")
-                else:
-                    lines.append(f"{rank}. {name} — {total}")
-
-            content = "\n".join(lines)
-
-        # --- Check for existing scoreboard message ---
-        async with self.pool.acquire() as conn:
-            existing = await conn.fetchrow("""
-                SELECT channel_id, message_id
-                FROM scoreboard_messages
-                WHERE server_id = $1
-            """, server_id)
-
-        if not existing:
-            # No scoreboard configured
-            return
-
-        channel = self.get_channel(int(existing["channel_id"]))
-
-        if existing["message_id"] is None:
-            # Channel set but message not created yet
-            message = await channel.send(content)
-
-            async with self.pool.acquire() as conn:
-                await conn.execute("""
-                    UPDATE scoreboard_messages
-                    SET message_id = $1
-                    WHERE server_id = $2
-                """, str(message.id), server_id)
-        else:
-            try:
-                message = await channel.fetch_message(int(existing["message_id"]))
-                await message.edit(content=content)
-            except:
-                # Message deleted manually, recreate
-                message = await channel.send(content)
-
-                async with self.pool.acquire() as conn:
-                    await conn.execute("""
-                        UPDATE scoreboard_messages
-                        SET message_id = $1
-                        WHERE server_id = $2
-                    """, str(message.id), server_id)
 
 bot = Bot()
 
-# -----------------
-# Donations
-# -----------------
 
-@bot.tree.command(name="donate", description="Donate items")
-async def donate(interaction: discord.Interaction, item: str, quantity: int):
-    if quantity <= 0:
-        await interaction.response.send_message("Quantity must be positive.", ephemeral=True)
-        return
-    if item not in [i["item_name"] for i in ITEMS if i["is_contributable"]]:
-        await interaction.response.send_message(
-            f"an attempt was made to donate {item}, it's not on the whitelist or isn't an item",
-            
-        )
-        return
-    server_id = str(interaction.guild.id)
-    user_id = str(interaction.user.id)
-    now = datetime.now(timezone.utc)
-    
-    async with bot.pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, server_id, user_id, item, quantity, now, False)
-
-    #update scoreboard
-    await bot.update_scoreboard(interaction)
-
-    await interaction.response.send_message(
-        f"{interaction.user.display_name} donated {quantity} {item}"
-    )
-
-@donate.autocomplete("item")
-async def donate_item_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=i["item_name"], value=i["item_name"])
-        for i in ITEMS
-        if i["is_contributable"] and current.lower() in i["item_name"].lower()
-    ][:25]
-
-@bot.tree.command(name="balance_items", description="Balance items in inventory")
-@app_commands.checks.has_permissions(administrator=True)
-async def balance_items(interaction: discord.Interaction, item: str, quantity: int):
-    if item not in [i["item_name"] for i in ITEMS]:
-        await interaction.response.send_message(
-            f"{item} is not a valid item",
-            ephemeral=True
-        )
-        return
-    server_id = str(interaction.guild.id)
-    user_id = str(interaction.user.id)
-    now = datetime.now(timezone.utc)
-    
-    async with bot.pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, server_id, user_id, item, quantity, now, True)
-
-        row = await conn.fetchrow("""
-            SELECT SUM(quantity) AS total_items
-            FROM donations
-            WHERE server_id = $1 AND item = $2
-        """, server_id, item)
-
-    total_items = row["total_items"] or 0
-
-    await interaction.response.send_message(
-        f"adjusted {item} by {quantity}, current inventory {total_items}",
-        ephemeral=True
-    )
-
-@balance_items.autocomplete("item")
-async def balance_item_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=i["item_name"], value=i["item_name"])
-        for i in ITEMS
-        if i["is_contributable"] and current.lower() in i["item_name"].lower()
-    ][:25]
-
-@bot.tree.command(name="toggle_items", description="Toggle donatable items")
-@app_commands.checks.has_permissions(administrator=True)
-async def toggle_items(interaction: discord.Interaction, item: str):
-    async with bot.pool.acquire() as conn:
-        row = await conn.fetchrow("""
-            UPDATE items
-            SET is_contributable = NOT is_contributable
-            WHERE item_name = $1
-            RETURNING is_contributable
-        """, item)
-
-        if row:
-            rows = await conn.fetch("SELECT item_name, is_contributable FROM items;")
-            global ITEMS
-            ITEMS = [
-                {"item_name": r["item_name"], "is_contributable": r["is_contributable"]}
-                for r in rows
-            ]
-
-    if row is None:
-        await interaction.response.send_message(f"Item '{item}' not found.", ephemeral=True)
+@bot.event
+async def on_message(message: discord.Message):
+    if message.author.bot:
         return
 
-    state = row["is_contributable"]
-    msg = (
-        f"Item {item} is now valid for donations."
-        if state else
-        f"Item {item} is no longer valid for donations."
-    )
-
-    await interaction.response.send_message(msg, ephemeral=True)
-
-@toggle_items.autocomplete("item")
-async def toggle_item_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=i["item_name"], value=i["item_name"])
-        for i in ITEMS
-        if current.lower() in i["item_name"].lower()
-    ][:25]
-
-@bot.tree.command(name="update_required", description="update required items")
-@app_commands.checks.has_permissions(administrator=True)
-async def update_required(interaction: discord.Interaction, item: str, qty: int):
-    if item not in [i["item_name"] for i in ITEMS]:
-        await interaction.response.send_message(
-            f"{item} is not a valid item",
-            ephemeral=True
-        )
-        return
-    server_id = str(interaction.guild.id)
-
-    async with bot.pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO required_items (server_id, item_name, required_quantity)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (server_id, item_name)
-            DO UPDATE SET required_quantity = EXCLUDED.required_quantity
-        """, server_id, item, qty)
-
-    msg = f"updated requirements, {item} has a required quantity of {qty}"
-    await interaction.response.send_message(msg, ephemeral=True)
-
-@update_required.autocomplete("item")
-async def update_required_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=i["item_name"], value=i["item_name"])
-        for i in ITEMS
-        if current.lower() in i["item_name"].lower()
-    ][:25]
-
-#setting item values for donations
-async def set_item_value_function(interaction, item: str, value: int):
-    if item not in [i["item_name"] for i in ITEMS]:
-        await interaction.response.send_message(
-            f"{item} is not a valid item",
-            ephemeral=True
-        )
-        return
-    async with bot.pool.acquire() as conn:
-        await conn.execute("""
-            UPDATE items
-            SET donate_value = ($1)
-            WHERE item_name = ($2)
-        """, value, item)
-
-    msg = f"updated item values, {item} has adonation value of {value}"
-    await interaction.response.send_message(msg, ephemeral=True)
-
-
-@bot.tree.command(name="set_item_value", description="update donation value for items")
-@app_commands.checks.has_permissions(administrator=True)
-async def set_item_value(interaction: discord.Interaction, item: str, value: int):
-    await set_item_value_function(interaction, item, value)
-
-@bot.tree.command(name="siv", description="alias for update donation value for items")
-@app_commands.checks.has_permissions(administrator=True)
-async def set_item_value_alias(interaction: discord.Interaction, item: str, value: int):
-    await set_item_value_function(interaction, item, value)
-
-@set_item_value.autocomplete("item")
-async def set_item_value_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=i["item_name"], value=i["item_name"])
-        for i in ITEMS
-        if current.lower() in i["item_name"].lower()
-    ][:25]
-
-@set_item_value_alias.autocomplete("item")
-async def set_item_value_alias_autocomplete(interaction: discord.Interaction, current: str):
-    return [
-        app_commands.Choice(name=i["item_name"], value=i["item_name"])
-        for i in ITEMS
-        if current.lower() in i["item_name"].lower()
-    ][:25]
-
-@bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
-@app_commands.checks.has_permissions(administrator=True)
-async def set_scoreboard_channel(
-    interaction: discord.Interaction,
-    channel: discord.TextChannel
-):
-    server_id = str(interaction.guild.id)
-
-    async with bot.pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO scoreboard_messages (server_id, channel_id, message_id)
-            VALUES ($1, $2, NULL)
-            ON CONFLICT (server_id)
-            DO UPDATE SET
-                channel_id = EXCLUDED.channel_id,
-                message_id = NULL
-        """, server_id, str(channel.id))
-
-    await interaction.response.send_message(
-        f"Scoreboard channel set to {channel.mention}. "
-        "A new scoreboard message will be created on the next update.",
-        ephemeral=True
-    )
-
-# -----------------
-# Reports
-# -----------------
-
-@bot.tree.command(name="show_required", description="Show required items vs current stock")
-async def show_required(interaction: discord.Interaction):
-
-    server_id = str(interaction.guild.id)
-
-    query = """
-        WITH current_inventory AS (
-            SELECT
-                server_id,
-                item,
-                SUM(quantity) AS stock_qty
-            FROM donations
-            GROUP BY server_id, item
-        )
-        SELECT
-            r.item_name,
-            r.required_quantity,
-            COALESCE(i.stock_qty, 0) AS stock_qty,
-            r.required_quantity - COALESCE(i.stock_qty, 0) AS remaining
-        FROM required_items r
-        LEFT JOIN current_inventory i
-            ON i.server_id = r.server_id
-           AND i.item = r.item_name
-        WHERE r.server_id = $1
-        ORDER BY r.item_name;
-    """
-
-    async with bot.pool.acquire() as conn:
-        rows = await conn.fetch(query, server_id)
-
-    if not rows:
-        await interaction.response.send_message("No required items set.", ephemeral=True)
+    if message.channel.id != INPUT_CHANNEL_ID:
         return
 
-    # Table formatting
-    lines = ["\n**Required Items Status:**", "```"]
+    output_channel = bot.get_channel(OUTPUT_CHANNEL_ID)
+    if not output_channel:
+        return
 
-    max_item_len = max(
-    max(len(r["item_name"]) for r in rows),
-    len("Item")
-    )
+    lines = message.content.splitlines()
 
-    max_req_len = max(
-        max(len(str(r["required_quantity"])) for r in rows),
-        len("Required")
-    )
+    results = []
 
-    max_stock_len = max(
-        max(len(str(r["stock_qty"])) for r in rows),
-        len("Stock")
-    )
+    for line in lines:
+        clean = line.strip()
+        if not clean:
+            continue
 
-    max_rem_len = max(
-        max(len(str(r["remaining"])) for r in rows),
-        len("To collect")
-    )
+        guess = guess_item(clean)
+        if guess:
+            results.append(f"`{clean}` → **{guess}**")
+        else:
+            results.append(f"`{clean}` → ❌ No match")
 
-    header = (
-        f"{'Item'.ljust(max_item_len)} | "
-        f"{'Required'.rjust(max_req_len)} | "
-        f"{'Stock'.rjust(max_stock_len)} | "
-        f"{'To collect'.rjust(max_rem_len)}"
-    )
-
-    separator = (
-        f"{'-' * max_item_len}-+-"
-        f"{'-' * max_req_len}-+-"
-        f"{'-' * max_stock_len}-+-"
-        f"{'-' * max_rem_len}"
-    )
-
-    lines.append(header)
-    lines.append(separator)
-
-    for r in rows:
-        lines.append(
-            f"{r['item_name'].ljust(max_item_len)} | "
-            f"{str(r['required_quantity']).rjust(max_req_len)} | "
-            f"{str(r['stock_qty']).rjust(max_stock_len)} | "
-            f"{str(r['remaining']).rjust(max_rem_len)}"
+    if results:
+        await output_channel.send(
+            f"Guesses from {message.author.mention}:\n" +
+            "\n".join(results)
         )
 
-    lines.append("```")
 
-    await interaction.response.send_message("\n".join(lines))
-
-@bot.tree.command(name="inventory_file")
-@app_commands.checks.has_permissions(administrator=True)
-async def inventory_file(interaction: discord.Interaction):
-    async with bot.pool.acquire() as conn:
-        rows = await conn.fetch("""
-            SELECT item, SUM(quantity) AS total_quantity
-            FROM donations
-            WHERE server_id = $1
-            GROUP BY item
-            ORDER BY item
-        """, str(interaction.guild.id))
-
-    if not rows:
-        await interaction.response.send_message("No inventory.", ephemeral=True)
-        return
-
-    # Build CSV in memory
-    content = "Item,Quantity\n"
-    for r in rows:
-        content += f"{r['item']},{r['total_quantity'] or 0}\n"
-
-    file = discord.File(
-        BytesIO(content.encode("utf-8")),
-        filename="inventory.csv"
-    )
-
-    await interaction.response.send_message(
-        "Here’s your inventory export:",
-        file=file
-    )
-
-@bot.tree.command(name="report_user", description="View donation report")
-async def report_user(interaction: discord.Interaction, start_date: str = None, end_date: str = None):
-    server_id = str(interaction.guild.id)
-
-    query = """
-        SELECT user_id, item, SUM(quantity) AS total_quantity
-        FROM donations
-        WHERE server_id = $1 AND is_adjustment = FALSE
-    """
-
-    params = [server_id]
-    idx = 2
-
-    if start_date:
-        start_date = parse_date(start_date)
-        query += f" AND donation_date >= ${idx}"
-        params.append(start_date)
-        idx += 1
-
-    if end_date:
-        end_date = parse_date(end_date)
-        query += f" AND donation_date <= ${idx}"
-        params.append(end_date)
-        idx += 1
-
-    query += " GROUP BY user_id, item ORDER BY user_id, item"
-
-    async with bot.pool.acquire() as conn:
-        rows = await conn.fetch(query, *params)
-
-    if not rows:
-        await interaction.response.send_message("No donations in that range.", ephemeral=True)
-        return
-
-    lines = ["**Donation Report:**"]
-    for r in rows:
-        user_id = int(r["user_id"])
-        try:
-            user = await bot.fetch_user(user_id)
-            username = user.display_name
-        except:
-            username = str(user_id)
-        lines.append(f"{username} donated: {r['total_quantity']} of {r['item']}")
-
-    await interaction.response.send_message("\n".join(lines))
-
-@bot.tree.command(name="report_user_file", description="View donation report")
-@app_commands.checks.has_permissions(administrator=True)
-async def report_user_file(interaction: discord.Interaction, start_date: str = None, end_date: str = None):
-    server_id = str(interaction.guild.id)
-
-    query = """
-        SELECT user_id, item, SUM(quantity) AS total_quantity
-        FROM donations
-        WHERE server_id = $1 AND is_adjustment = FALSE
-    """
-
-    params = [server_id]
-    idx = 2
-
-    if start_date:
-        start_date = parse_date(start_date)
-        query += f" AND donation_date >= ${idx}"
-        params.append(start_date)
-        idx += 1
-
-    if end_date:
-        end_date = parse_date(end_date)
-        query += f" AND donation_date <= ${idx}"
-        params.append(end_date)
-        idx += 1
-
-    query += " GROUP BY user_id, item ORDER BY user_id, item"
-
-    async with bot.pool.acquire() as conn:
-        rows = await conn.fetch(query, *params)
-
-    if not rows:
-        await interaction.response.send_message("No donations in that range.", ephemeral=True)
-        return
-
-    # Build CSV safely
-    content = "User,Item,Quantity\n"
-
-    for r in rows:
-        user_id = int(r["user_id"])
-
-        try:
-            user = await bot.fetch_user(user_id)
-            username = user.display_name
-        except:
-            username = str(user_id)
-
-        content += f"{username},{r['item']},{r['total_quantity'] or 0}\n"
-
-    file = discord.File(
-        BytesIO(content.encode("utf-8")),
-        filename="user_report.csv"
-    )
-
-    await interaction.response.send_message(
-        "Here’s your donation report export:",
-        file=file
-    )
-
-@bot.tree.command(name="inventory", description="View inventory report")
-async def inventory_report(interaction: discord.Interaction, start_date: str = None, end_date: str = None):
-    server_id = str(interaction.guild.id)
-
-    query = """
-        SELECT item, SUM(quantity) AS total_quantity
-        FROM donations
-        WHERE server_id = $1
-    """
-
-    params = [server_id]
-    idx = 2
-
-    if start_date:
-        start_date = parse_date(start_date)
-        query += f" AND donation_date >= ${idx}"
-        params.append(start_date)
-        idx += 1
-
-    if end_date:
-        end_date = parse_date(end_date)
-        query += f" AND donation_date <= ${idx}"
-        params.append(end_date)
-        idx += 1
-
-    query += " GROUP BY item ORDER BY item"
-
-    async with bot.pool.acquire() as conn:
-        rows = await conn.fetch(query, *params)
-
-    if not rows:
-        await interaction.response.send_message("No inventory in that range.", ephemeral=True)
-        return
-
-    lines = ["\n**Inventory Report:**", "```"]
-
-    max_item_len = max(len(r['item']) for r in rows)
-    max_qty_len = max(len(str(r['total_quantity'] or 0)) for r in rows)
-
-    header = f"{'Item'.ljust(max_item_len)} | {'Qty'.rjust(max_qty_len)}"
-    separator = f"{'-' * max_item_len}-+-{'-' * max_qty_len}"
-
-    lines.append(header)
-    lines.append(separator)
-
-    for r in rows:
-        item_name = r['item']
-        qty = r['total_quantity'] or 0
-        lines.append(f"{item_name.ljust(max_item_len)} | {str(qty).rjust(max_qty_len)}")
-
-    lines.append("```")
-
-    await interaction.response.send_message("\n".join(lines))
-
-# -----------------
-# Help / Ping
-# -----------------
-
-@bot.tree.command(name="ping")
-async def ping(interaction: discord.Interaction):
-    await interaction.response.send_message("pong", ephemeral=True)
-
-@bot.tree.command(name="help", description="Show available commands")
-async def help_command(interaction: discord.Interaction):
-    help_text = """
-**Available Commands**
-
-🪵 **Donations**
-/donate <item> <quantity>
-/balance_items <item> <quantity> (Admin) use if item quantities need adjustment
-/toggle_items <item> (Admin) use to toggle items on/off for autocomplete
-/update_required <item> <quantity> (Admin) updated required items 
-/show_required show items required by guild
-
-📊 **Reports**
-use as standalone reports, or enter dates in YYYY-MM-DD format for a range
-/report_user [start_date] [end_date] gives user level report of item donations
-/report_user_file [start_date] [end_date] (Admin) gives user level report of item donations as a csv file
-/inventory [start_date] [end_date] gives full inventory report
-/inventory_file [start_date] [end_date] (Admin) gives full inventory report as a csv file
-
-🎟️ **Lottery**
-/lottery <number> enter your number for this lottery draw
-/lottery_draw (Admin) run the draw! announces a winner
-/lottery_reset (Admin) resets the current lottery
-
-⚙️ **Utility**
-/ping check if the bot is alive
-/help you used this command to get here....
-"""
-    await interaction.response.send_message(help_text, ephemeral=True)
-
-# -----------------
-# Lottery
-# -----------------
-
-@bot.tree.command(name="lottery_reset", description="Reset the current lottery")
-@app_commands.checks.has_permissions(administrator=True)
-async def lottery_reset(interaction: discord.Interaction):
-    server_id = str(interaction.guild.id)
-
-    async with bot.pool.acquire() as conn:
-        await conn.execute("DELETE FROM lottery_entries WHERE server_id = $1", server_id)
-
-    await interaction.response.send_message("Lottery reset.", ephemeral=True)
-
-@bot.tree.command(name="lottery", description="Enter the lottery (1-50)")
-async def lottery(interaction: discord.Interaction, number: int):
-    if number < 1 or number > 50:
-        await interaction.response.send_message("Pick a number between 1 and 50.", ephemeral=True)
-        return
-
-    server_id = str(interaction.guild.id)
-    user_id = str(interaction.user.id)
-
-    async with bot.pool.acquire() as conn:
-        try:
-            await conn.execute("""
-                INSERT INTO lottery_entries (server_id, user_id, number)
-                VALUES ($1, $2, $3)
-            """, server_id, user_id, number)
-        except Exception:
-            await interaction.response.send_message(
-                "You have already entered or that number is taken.",
-                ephemeral=True
-            )
-            return
-
-    await interaction.response.send_message(
-        f"{interaction.user.mention} entered with number {number} 🎟️"
-    )
-
-@bot.tree.command(name="lottery_draw", description="Draw the lottery winner")
-@app_commands.checks.has_permissions(administrator=True)
-async def lottery_draw(interaction: discord.Interaction):
-    server_id = str(interaction.guild.id)
-
-    async with bot.pool.acquire() as conn:
-        rows = await conn.fetch(
-            "SELECT user_id, number FROM lottery_entries WHERE server_id = $1",
-            server_id
-        )
-
-        await conn.execute("DELETE FROM lottery_entries WHERE server_id = $1", server_id)
-
-    if not rows:
-        await interaction.response.send_message("No lottery entries yet.", ephemeral=True)
-        return
-
-    winning_number = random.randint(1, 50)
-    winner = next((r['user_id'] for r in rows if r['number'] == winning_number), None)
-
-    if winner:
-        await interaction.response.send_message(
-            f"Winning number: {winning_number}\n<@{winner}> wins!"
-        )
-    else:
-        await interaction.response.send_message(
-            f"Winning number: {winning_number}\nNo winner this time!"
-        )
-
-bot.run(os.environ["DISCORD_TOKEN"])
+bot.run(TOKEN)
