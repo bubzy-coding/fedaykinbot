@@ -2,6 +2,7 @@ import os
 import discord
 import asyncpg
 from rapidfuzz import process
+import re
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -11,6 +12,22 @@ OUTPUT_CHANNEL_ID = 1473069420548198544  # where guesses get posted
 
 ITEMS = []
 pool = None
+
+# Regex and pattern match
+line_pattern = re.compile(r"^([+-])\s*(\d+)\s+(.+)$")
+
+def parse_line(line: str):
+    match = line_pattern.match(line.strip())
+    if not match:
+        return None
+
+    sign, qty, item_text = match.groups()
+    qty = int(qty)
+
+    if sign == "-":
+        qty = -qty
+
+    return qty, item_text.strip()
 
 
 # ---------- DB LOAD ----------
@@ -85,6 +102,9 @@ async def on_message(message: discord.Message):
         else:
             results.append(f"`{clean}` → ❌ No match")
 
+    for result in results:
+        print(parse_line(result))
+        
     if results:
         await output_channel.send(
             f"Guesses from {message.author.mention}:\n" +
