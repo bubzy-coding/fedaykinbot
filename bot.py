@@ -14,7 +14,7 @@ ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern = re.compile(r"^([+-])\s*(\d+)\s+(.+)$")
+line_pattern = re.compile(r"^([+\-~])\s*(\d+)\s+(.+)$")
 
 def parse_line(line: str):
     match = line_pattern.match(line.strip())
@@ -27,7 +27,7 @@ def parse_line(line: str):
     if sign == "-":
         qty = -qty
 
-    return qty, item_text.strip()
+    return sign, qty, item_text.strip()
 
 
 # ---------- DB LOAD ----------
@@ -92,18 +92,27 @@ async def on_message(message: discord.Message):
     results = []
 
     for line in lines:
-        clean = line.strip()
-        if not clean:
-            continue
+        for line in lines:
+            parsed = parse_line(line)
+            if not parsed:
+                results.append(f"`{line}` → ❌ Invalid format")
+                continue
 
-        guess = guess_item(clean)
+        symbol, qty, item_text = parsed
+        if symbol == "~":
+            if not message.author.guild_permissions.administrator:
+                results.append("❌ You are not allowed to use ~")
+                continue
+            
+        guess = guess_item(item_text)
+    
         if guess:
-            results.append(f"`{clean}` → **{guess}**")
+            results.append(f"{qty:+} **{guess}**")
         else:
-            results.append(f"`{clean}` → ❌ No match")
+            results.append(f"{qty:+} `{item_text}` → ❌ No match")
 
-    for result in results:
-        print(parse_line(result))
+    # for result in results:
+    #      await output_channel.send(f"adding {parse_line(result)}")
         
     if results:
         await output_channel.send(
