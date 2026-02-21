@@ -3,7 +3,7 @@ import discord
 import asyncpg
 from rapidfuzz import process
 import re
-
+from datetime import datetime, timezone
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -72,8 +72,34 @@ class Bot(discord.Client):
         print(f"Loaded {len(ITEMS)} items")
 
 
-bot = Bot()
+async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
+    server_id = str(message.guild.id)
+    if symbol == "~":
+        await conn.execute("""
+            INSERT INTO inventory (server_id, item_name, quantity)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (server_id, item_name)
+            DO UPDATE SET quantity = EXCLUDED.quantity
+        """, server_id, item_name, qty)
 
+    else:
+        await conn.execute("""
+            INSERT INTO inventory (server_id, item_name, quantity)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (server_id, item_name)
+            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+        """, server_id, item_name, qty)
+    if symbol != "~":
+        now = datetime.now(timezone.utc)
+        await conn.execute("""
+            INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, server_id, message.author.id, item_name, qty, now, False)
+
+
+
+
+bot = Bot()
 
 @bot.event
 async def on_message(message: discord.Message):
@@ -90,25 +116,27 @@ async def on_message(message: discord.Message):
     lines = message.content.splitlines()
 
     results = []
+    async with pool.acquire() as conn:
 
-    for line in lines:
-        parsed = parse_line(line)
-        if not parsed:
-            results.append(f"`{line}` → ❌ Invalid format")
-            continue
-
-        symbol, qty, item_text = parsed
-        if symbol == "~":
-            if not message.author.guild_permissions.administrator:
-                results.append("❌ You are not allowed to use ~")
+        for line in lines:
+            parsed = parse_line(line)
+            if not parsed:
+                results.append(f"`{line}` → ❌ Invalid format")
                 continue
 
-        guess = guess_item(item_text)
+            symbol, qty, item_text = parsed
+            if symbol == "~":
+                if not message.author.guild_permissions.administrator:
+                    results.append("❌ You are not allowed to use ~")
+                    continue
 
-        if guess:
-            results.append(f"{qty:+} **{guess}**")
-        else:
-            results.append(f"{qty:+} `{item_text}` → ❌ No match")
+            guess = guess_item(item_text)
+
+            if guess:
+                results.append(f"{qty:+} **{guess}**")
+                await handle_db(symbol, qty, guess, message, conn)
+            else:
+                results.append(f"{qty:+} `{item_text}` → ❌ No match")
 
     # for result in results:
     #      await output_channel.send(f"adding {parse_line(result)}")
@@ -118,6 +146,7 @@ async def on_message(message: discord.Message):
             f"Guesses from {message.author.mention}:\n" +
             "\n".join(results)
         )
+    
 
 
 bot.run(TOKEN)
