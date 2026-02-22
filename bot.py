@@ -8,6 +8,11 @@ from rapidfuzz import process
 import re
 from datetime import datetime, timezone, timedelta
 import aiohttp
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -36,7 +41,7 @@ async def fetch_all_items():
             }
 
             async with session.get(BASED_URL, params=params) as resp:
-                print(resp.status, resp.url)
+                logging.info(resp.status, resp.url)
                 resp.raise_for_status()
                 data = await resp.json()
 
@@ -115,7 +120,7 @@ class Bot(commands.Bot):
         await load_items()
         await self.load_extension("report_commands")
         await self.tree.sync()
-        print("Bot ready")
+        logger.info("Bot ready")
 
     async def on_ready(self):
         async with self.pool.acquire() as conn:
@@ -129,7 +134,7 @@ class Bot(commands.Bot):
                 }
                 for row in rows
             }
-            print("Loaded bot_settings:", self.bot_settings)
+            logging.info("Loaded bot_settings:", self.bot_settings)
 
     async def update_scoreboard(self, ctx, conn):
         guild = ctx.guild
@@ -195,12 +200,12 @@ class Bot(commands.Bot):
 
         if not channel_name:
             # No scoreboard configured
-            print("no channel_name")
+            logging.info("no channel_name")
             return
 
         channel = self.get_channel(int(channel_name))
         if not channel:
-            print("no channel")
+            logging.info("no channel")
             return
 
         if message_name is None:
@@ -269,7 +274,7 @@ bot = Bot()
 #process messages in donation channel
 @bot.event
 async def on_message(message: discord.Message):
-    print("MESSAGE:", message.content)
+    logging.info("MESSAGE:", message.content)
     if message.author.bot:
         return
     
@@ -279,16 +284,16 @@ async def on_message(message: discord.Message):
 
     input_channel = settings.get("input")
     if not input_channel:
-        print(f"No input channel???")
+        logging.info(f"No input channel???")
         return
     
     if message.channel.id != int(input_channel):
-        print("message not in correct channel")
+        logging.info("message not in correct channel")
         return
 
     output_channel = bot.get_channel(int(settings.get("output")))
     if not output_channel:
-        print("no output channel")
+        logging.info("no output channel")
         return
 
     lines = message.content.splitlines()
@@ -339,7 +344,7 @@ async def set_scoreboard_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
-    print("WHAT THOUGH")
+    logging.info("WHAT THOUGH")
     await interaction.response.defer(ephemeral=True)
     server_id = interaction.guild.id
 
