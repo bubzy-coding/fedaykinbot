@@ -16,6 +16,7 @@ INPUT_CHANNEL_ID = 1472226231830450261   # channel users type in
 OUTPUT_CHANNEL_ID = 1473069420548198544  # where guesses get posted
 BASE_URL = "https://api.awakening.wiki/items"
 LIMIT = 1000
+MAX_PAGES = 4
 
 ITEMS = []
 pool = None
@@ -29,9 +30,9 @@ line_pattern_toggle = re.compile(r"^(!)\s+(.+)$")
 async def fetch_all_items():
     offset = 0
     all_items = []
-
+    pages = 0
     async with aiohttp.ClientSession() as session:
-        while True:
+        while pages<MAX_PAGES:
             params = {
                 "limit": LIMIT,
                 "offset": offset,
@@ -43,16 +44,18 @@ async def fetch_all_items():
                 resp.raise_for_status()
                 data = await resp.json()
 
-            if not data["list"]:
+            items = data["list"]
+            if not items:
                 break
 
-            all_items.extend(data["list"])
+            all_items.extend(items)
 
-            if len(data) < LIMIT:
+            if len(items) < LIMIT:
                 break
 
             offset += LIMIT
-
+            pages += 1
+            
     return all_items
 
 
