@@ -151,9 +151,10 @@ class Bot(commands.Bot):
                     WHERE d.server_id = $1
                         AND d.donation_date >= $2
                         AND NOT d.is_adjustment
+                        AND i.server_id = $3
                     GROUP BY d.user_id
                     ORDER BY total_value DESC;
-            """, server_id, period_start)
+            """, server_id, period_start, int(server_id))
 
         # --- Build content ---
         if not rows:
@@ -201,7 +202,7 @@ class Bot(commands.Bot):
                     UPDATE bot_settings
                     SET scoreboard_message = $1
                     WHERE server_id = $2
-                """, str(message.id), server_id)
+                """, str(message.id), int(server_id))
         else:
             try:
                 message = await channel.fetch_message(int(message_name))
@@ -215,7 +216,7 @@ class Bot(commands.Bot):
                         UPDATE bot_settings
                         SET scoreboard_message = $1
                         WHERE server_id = $2
-                    """, str(message.id), server_id)
+                    """, str(message.id), int(server_id))
 
 
 async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
@@ -302,7 +303,7 @@ async def on_message(message: discord.Message):
                     elif symbol == "$":
                         results.append(f"Set donation value of **{guess}** to {qty}")
                     await handle_db(symbol, qty, guess, message, conn)
-                    bot.update_scoreboard(message, conn)
+                    await bot.update_scoreboard(message, conn)
                 else:
                     results.append(f"{qty:+} `{item_text}` → ❌ No match")
     
