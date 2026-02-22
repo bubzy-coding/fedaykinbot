@@ -327,8 +327,8 @@ async def set_scoreboard_channel(
             VALUES ($1, $2, NULL)
             ON CONFLICT (server_id)
             DO UPDATE SET
-                channel_id = EXCLUDED.channel_id,
-                message_id = NULL
+                scoreboard_channel = EXCLUDED.scoreboard_channel,
+                scoreboard_message = NULL
         """, server_id, str(channel.id))
 
     await interaction.response.send_message(
