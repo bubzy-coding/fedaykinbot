@@ -383,9 +383,9 @@ async def sync_items(interaction: discord.Interaction):
             item["Id"],
             item["name"],
             item["short_description"],
-            json.loads(item["item_tags"])  # convert string → real list
+            json.loads(item["item_tags"])
         )
-        for item in items["list"]
+        for item in items
     ]
 
     async with pool.acquire() as conn:
