@@ -339,6 +339,7 @@ async def set_scoreboard_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
+    print("WHAT THOUGH")
     await interaction.response.defer(ephemeral=True)
     server_id = interaction.guild.id
 
