@@ -1,33 +1,83 @@
 import os
 import discord
+from discord import app_commands
 import asyncpg
+import json
 from rapidfuzz import process
 import re
 from datetime import datetime, timezone, timedelta
+import aiohttp
+
+
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
 
 INPUT_CHANNEL_ID = 1472226231830450261   # channel users type in
 OUTPUT_CHANNEL_ID = 1473069420548198544  # where guesses get posted
+BASE_URL = "https://api.awakening.wiki/items"
+LIMIT = 1000
 
 ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern = re.compile(r"^([+\-~])\s*(\d+)\s+(.+)$")
+line_pattern_qty = re.compile(r"^([+\-$])\s*(\d+)\s+(.+)$")
+line_pattern_toggle = re.compile(r"^(!)\s+(.+)$")
+
+
+
+async def fetch_all_items():
+    offset = 0
+    all_items = []
+
+    async with aiohttp.ClientSession() as session:
+        while True:
+            params = {
+                "limit": LIMIT,
+                "offset": offset,
+                "shuffle": 0,
+                "fields": "Id,name,item_tags,short_description"
+            }
+
+            async with session.get(BASE_URL, params=params) as resp:
+                resp.raise_for_status()
+                data = await resp.json()
+
+            if not data:
+                break
+
+            all_items.extend(data)
+
+            if len(data) < LIMIT:
+                break
+
+            offset += LIMIT
+
+    return all_items
+
+
 
 def parse_line(line: str):
-    match = line_pattern.match(line.strip())
-    if not match:
-        return None
+    line = line.strip()
 
-    sign, qty, item_text = match.groups()
-    qty = int(qty)
+    # Quantity operations
+    match = line_pattern_qty.match(line)
+    if match:
+        symbol, qty, item_text = match.groups()
+        qty = int(qty)
 
-    if sign == "-":
-        qty = -qty
+        if symbol == "-":
+            qty = -qty
 
-    return sign, qty, item_text.strip()
+        return symbol, qty, item_text.strip()
+
+    # Toggle operation
+    match = line_pattern_toggle.match(line)
+    if match:
+        symbol, item_text = match.groups()
+        return symbol, None, item_text.strip()
+
+    return None
 
 
 # ---------- DB LOAD ----------
@@ -64,12 +114,14 @@ class Bot(discord.Client):
         intents = discord.Intents.default()
         intents.message_content = True
         super().__init__(intents=intents)
+        self.tree = app_commands.CommandTree(self)
 
     async def setup_hook(self):
         global pool
         pool = await asyncpg.create_pool(DATABASE_URL)
         await load_items()
-        print(f"Loaded {len(ITEMS)} items")
+        await self.tree.sync()
+        print("Bot ready")
 
     async def update_scoreboard(self, interaction: discord.Interaction):
         server_id = str(interaction.guild.id)
@@ -163,7 +215,21 @@ class Bot(discord.Client):
 
 async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
     server_id = str(message.guild.id)
-    if symbol == "~":
+    
+    if symbol in ("+", "-"):
+        await conn.execute("""
+            INSERT INTO inventory (server_id, item_name, quantity)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (server_id, item_name)
+            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+        """, server_id, item_name, qty)
+        now = datetime.now(timezone.utc)
+        await conn.execute("""
+            INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
+            VALUES ($1, $2, $3, $4, $5, $6)
+        """, server_id, message.author.id, item_name, qty, now, False)
+
+    elif symbol == "~":
         await conn.execute("""
             INSERT INTO inventory (server_id, item_name, quantity)
             VALUES ($1, $2, $3)
@@ -171,19 +237,22 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
             DO UPDATE SET quantity = EXCLUDED.quantity
         """, server_id, item_name, qty)
 
-    else:
+    elif symbol == "$":
         await conn.execute("""
-            INSERT INTO inventory (server_id, item_name, quantity)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (server_id, item_name)
-            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
-        """, server_id, item_name, qty)
-    if symbol != "~":
-        now = datetime.now(timezone.utc)
+            INSERT INTO items (item_name, donate_value)
+            VALUES ($1, $2)
+            ON CONFLICT (item_name)
+            DO UPDATE SET donate_value = EXCLUDED.donate_value
+        """, item_name, qty)
+    
+    elif symbol == "!":
         await conn.execute("""
-            INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, server_id, message.author.id, item_name, qty, now, False)
+            INSERT INTO items (item_name, is_contributable)
+            VALUES ($1, TRUE)
+            ON CONFLICT (item_name)
+            DO UPDATE SET is_contributable = NOT EXCLUDED.is_contributable
+        """, item_name)
+
 
 
 
@@ -210,11 +279,11 @@ async def on_message(message: discord.Message):
             for line in lines:
                 parsed = parse_line(line)
                 if not parsed:
-                    results.append(f"`{line}` → ❌ Invalid format")
+                    results.append(f"`{line}` → ❌ Invalid format, use like '+90 Iron Ingot'")
                     continue
 
                 symbol, qty, item_text = parsed
-                if symbol == "~":
+                if symbol in ("~", "$", "!"):
                     if not message.author.guild_permissions.administrator:
                         results.append("❌ You are not allowed to use ~")
                         continue
@@ -235,7 +304,111 @@ async def on_message(message: discord.Message):
             f"Donations from {message.author.mention}:\n" +
             "\n".join(results)
         )
-    
+@bot.tree.command(name="set_donation_ichannel")
+@app_commands.describe(channel="Channel where users submit donations")
+async def set_donation_ichannel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You must be an admin to use this.",
+            ephemeral=True
+        )
+        return
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO bot_settings (server_id, donation_input_channel)
+            VALUES ($1, $2)
+            ON CONFLICT (server_id)
+            DO UPDATE SET donation_input_channel = EXCLUDED.donation_input_channel
+        """,
+            interaction.guild.id,
+            channel.id
+        )
+
+    await interaction.response.send_message(
+        f"Donation input channel set to {channel.mention}",
+        ephemeral=True
+    )
+
+@bot.tree.command(name="set_donation_ochannel")
+@app_commands.describe(channel="Channel where guesses are posted")
+async def set_donation_ochannel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You must be an admin to use this.",
+            ephemeral=True
+        )
+        return
+
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO bot_settings (server_id, donation_output_channel)
+            VALUES ($1, $2)
+            ON CONFLICT (server_id)
+            DO UPDATE SET donation_output_channel = EXCLUDED.donation_output_channel
+        """,
+            interaction.guild.id,
+            channel.id
+        )
+
+    await interaction.response.send_message(
+        f"Donation output channel set to {channel.mention}",
+        ephemeral=True
+    )
+
+#    
+import json
+
+@bot.tree.command(name="sync_items")
+async def sync_items(interaction: discord.Interaction):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message(
+            "You must be an admin to use this.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer()
+
+    items = await fetch_all_items()
+
+    records = [
+        (
+            item["Id"],
+            item["name"],
+            item["short_description"],
+            json.loads(item["item_tags"])  # convert string → real list
+        )
+        for item in items["list"]
+    ]
+
+    async with pool.acquire() as conn:
+        await conn.copy_records_to_table(
+            "items_new",
+            records=records,
+            columns=["id", "name", "short_description", "item_tags"]
+        )
+
+    await interaction.followup.send(f"Fetched {len(records)} items.")
 
 
 bot.run(TOKEN)
+
+
+
+
+
+# create table bot_settings
+# (
+#     server_id TEXT,
+#     donation_input_channel TEXT,
+#     donation_output_channel TEXT,
+#     UNIQUE(server_id, donation_input_channel),
+#     UNIQUE(server_id, donation_output_channel)
+# )
