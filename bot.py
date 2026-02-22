@@ -25,8 +25,6 @@ pool = None
 line_pattern_qty = re.compile(r"^([+\-$])\s*(\d+)\s+(.+)$")
 line_pattern_toggle = re.compile(r"^(!)\s+(.+)$")
 
-
-
 async def fetch_all_items():
     offset = 0
     all_items = []
@@ -91,8 +89,7 @@ async def load_items():
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
             SELECT item_name
-            FROM items
-            WHERE is_contributable = TRUE
+            FROM items_new
         """)
         ITEMS = [row["item_name"] for row in rows]
 
@@ -119,6 +116,7 @@ class Bot(discord.Client):
         intents.message_content = True
         super().__init__(intents=intents)
         self.tree = app_commands.CommandTree(self)
+        self.bot_settings = {}
 
     async def setup_hook(self):
         global pool
@@ -127,8 +125,22 @@ class Bot(discord.Client):
         await self.tree.sync()
         print("Bot ready")
 
-    async def update_scoreboard(self, interaction: discord.Interaction):
-        server_id = str(interaction.guild.id)
+    async def on_ready(self):
+        async with pool.acquire() as conn:
+            rows = await conn.fetch("SELECT * FROM bot_settings")
+            self.bot_settings = {
+                row["server_id"]: {
+                    "input": row["donation_input_channel"],
+                    "output": row["donation_output_channel"]
+                }
+                for row in rows
+            }
+
+    async def update_scoreboard(self, ctx, conn):
+        guild = str(ctx.guild)
+        if guild is None:
+            return
+        server_id = guild.id
 
         # --- Calculate start of current Tuesday ---
         now = datetime.now(timezone.utc)
@@ -141,9 +153,9 @@ class Bot(discord.Client):
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
                 SELECT d.user_id,
-                    SUM(d.quantity * i.donate_value) AS total_value
+                    SUM(d.quantity * i.donation_value) AS total_value
                     FROM donations d
-                    JOIN items i ON d.item = i.item_name
+                    JOIN donation_values i ON d.item = i.item_name
                     WHERE d.server_id = $1
                         AND d.donation_date >= $2
                         AND NOT d.is_adjustment
@@ -162,7 +174,7 @@ class Bot(discord.Client):
                 total = row["total_value"]
 
                 try:
-                    member = await interaction.guild.fetch_member(user_id)
+                    member = await ctx.guild.fetch_member(user_id)
                     name = member.display_name
                 except:
                     name = str(user_id)
@@ -179,32 +191,28 @@ class Bot(discord.Client):
             content = "\n".join(lines)
 
         # --- Check for existing scoreboard message ---
-        async with self.pool.acquire() as conn:
-            existing = await conn.fetchrow("""
-                SELECT channel_id, message_id
-                FROM scoreboard_messages
-                WHERE server_id = $1
-            """, server_id)
+        channel_name = self.bot_settings.get("scoreboard_channel")
+        message_name = self.bot_settings.get("scoreboard_message")
 
-        if not existing:
+        if not channel_name:
             # No scoreboard configured
             return
 
-        channel = self.get_channel(int(existing["channel_id"]))
+        channel = self.get_channel(int(channel_name))
 
-        if existing["message_id"] is None:
+        if message_name is None:
             # Channel set but message not created yet
             message = await channel.send(content)
 
             async with self.pool.acquire() as conn:
                 await conn.execute("""
-                    UPDATE scoreboard_messages
-                    SET message_id = $1
+                    UPDATE bot_settings
+                    SET scoreboard_message = $1
                     WHERE server_id = $2
                 """, str(message.id), server_id)
         else:
             try:
-                message = await channel.fetch_message(int(existing["message_id"]))
+                message = await channel.fetch_message(int(message_name))
                 await message.edit(content=content)
             except:
                 # Message deleted manually, recreate
@@ -212,10 +220,11 @@ class Bot(discord.Client):
 
                 async with self.pool.acquire() as conn:
                     await conn.execute("""
-                        UPDATE scoreboard_messages
-                        SET message_id = $1
+                        UPDATE bot_settings
+                        SET scoreboard_message = $1
                         WHERE server_id = $2
                     """, str(message.id), server_id)
+
 
 async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
     server_id = str(message.guild.id)
@@ -243,35 +252,56 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
 
     elif symbol == "$":
         await conn.execute("""
-            INSERT INTO items (item_name, donate_value)
-            VALUES ($1, $2)
-            ON CONFLICT (item_name)
+            INSERT INTO donation_values (server_id, item_name, donation_value)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (server_id, item_name)
             DO UPDATE SET donate_value = EXCLUDED.donate_value
-        """, item_name, qty)
+        """, server_id, item_name, qty)
     
     elif symbol == "!":
-        await conn.execute("""
-            INSERT INTO items (item_name, is_contributable)
-            VALUES ($1, TRUE)
-            ON CONFLICT (item_name)
-            DO UPDATE SET is_contributable = NOT EXCLUDED.is_contributable
-        """, item_name)
+        pass
 
-
-
-
-
+#Discord Operations requiring @bot
 bot = Bot()
 
+@bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_scoreboard_channel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    server_id = str(interaction.guild.id)
+
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO bot_settings (server_id, scoreboard_channel, scoreboard_message)
+            VALUES ($1, $2, NULL)
+            ON CONFLICT (server_id)
+            DO UPDATE SET
+                channel_id = EXCLUDED.channel_id,
+                message_id = NULL
+        """, server_id, str(channel.id))
+
+    await interaction.response.send_message(
+        f"Scoreboard channel set to {channel.mention}. "
+        "A new scoreboard message will be created on the next update.",
+        ephemeral=True
+    )
+
+#process messages in donation channel
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
         return
-
-    if message.channel.id != INPUT_CHANNEL_ID:
+    
+    settings = bot.bot_settings.get(message.guild.id)
+    if not settings:
         return
 
-    output_channel = bot.get_channel(OUTPUT_CHANNEL_ID)
+    if message.channel.id != settings["input"]:
+        return
+
+    output_channel = bot.get_channel(settings["output"])
     if not output_channel:
         return
 
@@ -283,7 +313,7 @@ async def on_message(message: discord.Message):
             for line in lines:
                 parsed = parse_line(line)
                 if not parsed:
-                    results.append(f"`{line}` → ❌ Invalid format, use like '+90 Iron Ingot'")
+                    results.append(f"`{line}` → ❌ Invalid format, use like this: `+90 Iron Ingot`")
                     continue
 
                 symbol, qty, item_text = parsed
@@ -308,6 +338,7 @@ async def on_message(message: discord.Message):
             f"Donations from {message.author.mention}:\n" +
             "\n".join(results)
         )
+
 @bot.tree.command(name="set_donation_ichannel")
 @app_commands.describe(channel="Channel where users submit donations")
 async def set_donation_ichannel(
@@ -402,7 +433,7 @@ async def sync_items(interaction: discord.Interaction):
             await conn.copy_records_to_table(
                 "items_new",
                 records=records,
-                columns=["id", "name", "short_description", "item_tags"]
+                columns=["id", "item_name", "short_description", "item_tags"]
             )
 
     await interaction.followup.send(f"Fetched {len(records)} items.")
@@ -421,4 +452,12 @@ bot.run(TOKEN)
 #     donation_output_channel TEXT,
 #     UNIQUE(server_id, donation_input_channel),
 #     UNIQUE(server_id, donation_output_channel)
+# )
+
+# CREATE TABLE donation_values(
+#     server_id BIGINT NOT NULL,
+#     id INT NOT NULL,
+#     item_name TEXT NOT NULL,
+#     donation_value NUMERIC(12,2),
+#     PRIMARY KEY (server_id, id)
 # )
