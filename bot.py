@@ -123,7 +123,9 @@ class Bot(commands.Bot):
             self.bot_settings = {
                 row["server_id"]: {
                     "input": row["donation_input_channel"],
-                    "output": row["donation_output_channel"]
+                    "output": row["donation_output_channel"],
+                    "scoreboard_channel": row["scoreboard_channel"],
+                    "scoreboard_message": row["scoreboard_message"]
                 }
                 for row in rows
             }
@@ -167,7 +169,7 @@ class Bot(commands.Bot):
                 total = row["total_value"]
 
                 try:
-                    member = await ctx.guild.fetch_member(user_id)
+                    member = guild.get_member(user_id)
                     name = member.display_name
                 except:
                     name = str(user_id)
@@ -184,20 +186,25 @@ class Bot(commands.Bot):
             content = "\n".join(lines)
 
         # --- Check for existing scoreboard message ---
-        channel_name = self.bot_settings.get("scoreboard_channel")
-        message_name = self.bot_settings.get("scoreboard_message")
+        settings = self.bot_settings.get(server_id)
+        if not settings:
+            return
+        channel_name = settings.get("scoreboard_channel")
+        message_name = settings.get("scoreboard_message")
 
         if not channel_name:
             # No scoreboard configured
             return
 
         channel = self.get_channel(int(channel_name))
+        if not channel:
+            return
 
         if message_name is None:
             # Channel set but message not created yet
             message = await channel.send(content)
 
-            async with self.pool.acquire() as conn:
+            async with conn:
                 await conn.execute("""
                     UPDATE bot_settings
                     SET scoreboard_message = $1
@@ -211,7 +218,7 @@ class Bot(commands.Bot):
                 # Message deleted manually, recreate
                 message = await channel.send(content)
 
-                async with self.pool.acquire() as conn:
+                async with conn:
                     await conn.execute("""
                         UPDATE bot_settings
                         SET scoreboard_message = $1
@@ -331,7 +338,8 @@ async def set_scoreboard_channel(
                 scoreboard_channel = EXCLUDED.scoreboard_channel,
                 scoreboard_message = NULL
         """, server_id, str(channel.id))
-
+    
+    bot.bot_settings[server_id]["scoreboard_channel"] = int(server_id)
     await interaction.response.send_message(
         f"Scoreboard channel set to {channel.mention}. "
         "A new scoreboard message will be created on the next update.",
