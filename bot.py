@@ -1,6 +1,7 @@
 import os
 import discord
 from discord import app_commands
+from discord.ext import commands
 import asyncpg
 import json
 from rapidfuzz import process
@@ -99,18 +100,20 @@ def guess_item(user_input: str):
 
 # ---------- DISCORD ----------
 
-class Bot(discord.Client):
+class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
-        super().__init__(intents=intents)
+        super().__init__(command_prefix="!", intents=intents)
         self.tree = app_commands.CommandTree(self)
         self.bot_settings = {}
 
     async def setup_hook(self):
         global pool
         pool = await asyncpg.create_pool(DATABASE_URL)
+        bot.pool = pool
         await load_items()
+        await self.load_extension("report_commands")
         await self.tree.sync()
         print("Bot ready")
 
@@ -315,13 +318,13 @@ async def on_message(message: discord.Message):
 
                 if guess:
                     if symbol == "+":
-                        results.append(f"{message.author.display_name} donated {abs(qty)} **{guess}**")
+                        results.append(f"Donated {abs(qty)} **{guess}**")
                     elif symbol == "-":
-                        results.append(f"{message.author.display_name} withdrew {abs(qty)} **{guess}**")
+                        results.append(f"Withdrew {abs(qty)} **{guess}**")
                     elif symbol == "~":
-                        results.append(f"{message.author.display_name} adjusted **{guess}** to {qty}")
+                        results.append(f"Adjusted total quantity of **{guess}** to {qty}")
                     elif symbol == "$":
-                        results.append(f"{message.author.display_name} set value of **{guess}** to {qty}")
+                        results.append(f"Set donation value of **{guess}** to {qty}")
                     await handle_db(symbol, qty, guess, message, conn)
                     bot.update_scoreboard(message, conn)
                 else:
@@ -332,6 +335,7 @@ async def on_message(message: discord.Message):
             f"Recorded the following Transactions from {message.author.mention}:\n" +
             "\n".join(results)
         )
+    await bot.process_commands(message)
 
 @bot.tree.command(name="set_donation_ichannel", description="set the input channel for donations")
 @app_commands.describe(channel="Channel where users submit donations")
