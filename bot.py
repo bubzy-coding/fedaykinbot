@@ -269,7 +269,7 @@ bot = Bot()
 #process messages in donation channel
 @bot.event
 async def on_message(message: discord.Message):
-    
+    print("MESSAGE:", message.content)
     if message.author.bot:
         return
     
