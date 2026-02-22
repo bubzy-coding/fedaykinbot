@@ -275,10 +275,14 @@ async def on_message(message: discord.Message):
     if not settings:
         return
 
-    if message.channel.id != settings["input"]:
+    input_channel = settings.get("input")
+    if not input_channel:
+        return
+    
+    if message.channel.id != int(input_channel):
         return
 
-    output_channel = bot.get_channel(settings["output"])
+    output_channel = bot.get_channel(int(settings.get("output")))
     if not output_channel:
         return
 
@@ -314,8 +318,8 @@ async def on_message(message: discord.Message):
                     did_modify = True
                 else:
                     results.append(f"{qty:+} `{item_text}` → ❌ No match")
-    if did_modify:
-        await bot.update_scoreboard(message, conn)
+        if did_modify:
+            await bot.update_scoreboard(message, conn)
     if results:
         
         await output_channel.send(
