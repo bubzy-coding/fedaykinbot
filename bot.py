@@ -319,7 +319,7 @@ async def set_scoreboard_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
-    server_id = str(interaction.guild.id)
+    server_id = interaction.guild.id
 
     async with bot.pool.acquire() as conn:
         await conn.execute("""
