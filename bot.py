@@ -14,7 +14,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 
 INPUT_CHANNEL_ID = 1472226231830450261   # channel users type in
 OUTPUT_CHANNEL_ID = 1473069420548198544  # where guesses get posted
-BASE_URL = "https://api.awakening.wiki/items"
+BASED_URL = "https://api.awakening.wiki/items"
 LIMIT = 1000
 MAX_PAGES = 4
 
@@ -40,7 +40,8 @@ async def fetch_all_items():
                 "fields": "Id,name,item_tags,short_description"
             }
 
-            async with session.get(BASE_URL, params=params) as resp:
+            async with session.get(BASED_URL, params=params) as resp:
+                print(resp.status, resp.url)
                 resp.raise_for_status()
                 data = await resp.json()
 
@@ -55,7 +56,7 @@ async def fetch_all_items():
 
             offset += LIMIT
             pages += 1
-            
+
     return all_items
 
 
