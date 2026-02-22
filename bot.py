@@ -384,13 +384,17 @@ async def sync_items(interaction: discord.Interaction):
     records = []
 
     for item in items:
+        if not item.get("name"):
+            continue  # skip broken wiki entries
+
         tags = item.get("item_tags")
         parsed = json.loads(tags) if isinstance(tags, str) else []
+
         records.append((
             item["Id"],
             item["name"],
-            item["short_description"],
-            json.dumps(parsed)  # <-- THIS is the important bit
+            item.get("short_description"),
+            json.dumps(parsed)
         ))
 
         async with pool.acquire() as conn:
