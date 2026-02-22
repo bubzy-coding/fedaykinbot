@@ -11,8 +11,6 @@ import aiohttp
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
 
-INPUT_CHANNEL_ID = 1472226231830450261   # channel users type in
-OUTPUT_CHANNEL_ID = 1473069420548198544  # where guesses get posted
 BASED_URL = "https://api.awakening.wiki/items"
 LIMIT = 1000
 MAX_PAGES = 4
@@ -22,7 +20,6 @@ pool = None
 
 # Regex and pattern match
 line_pattern_qty = re.compile(r"^([+\-$~])\s*(\d+)\s+(.+)$")
-line_pattern_toggle = re.compile(r"^(!)\s+(.+)$")
 
 async def fetch_all_items():
     offset = 0
@@ -317,17 +314,22 @@ async def on_message(message: discord.Message):
                 guess = guess_item(item_text)
 
                 if guess:
-                    results.append(f"{qty:+} **{guess}**")
+                    if symbol == "+":
+                        results.append(f"{message.author.display_name} donated {abs(qty)} **{guess}**")
+                    elif symbol == "-":
+                        results.append(f"{message.author.display_name} withdrew {abs(qty)} **{guess}**")
+                    elif symbol == "~":
+                        results.append(f"{message.author.display_name} adjusted **{guess}** to {qty}")
+                    elif symbol == "$":
+                        results.append(f"{message.author.display_name} set value of **{guess}** to {qty}")
                     await handle_db(symbol, qty, guess, message, conn)
+                    bot.update_scoreboard(message, conn)
                 else:
                     results.append(f"{qty:+} `{item_text}` → ❌ No match")
-
-    # for result in results:
-    #      await output_channel.send(f"adding {parse_line(result)}")
-        
+    
     if results:
         await output_channel.send(
-            f"Donations from {message.author.mention}:\n" +
+            f"Recorded the following Transactions from {message.author.mention}:\n" +
             "\n".join(results)
         )
 
