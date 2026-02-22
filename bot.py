@@ -378,23 +378,23 @@ async def sync_items(interaction: discord.Interaction):
 
     items = await fetch_all_items()
     records = []
+
     for item in items:
         tags = item.get("item_tags")
-        parsed_tags = json.loads(tags) if isinstance(tags, str) else []
-
+        parsed = json.loads(tags) if isinstance(tags, str) else []
         records.append((
             item["Id"],
             item["name"],
             item["short_description"],
-            parsed_tags
+            json.dumps(parsed)  # <-- THIS is the important bit
         ))
 
-    async with pool.acquire() as conn:
-        await conn.copy_records_to_table(
-            "items_new",
-            records=records,
-            columns=["id", "name", "short_description", "item_tags"]
-        )
+        async with pool.acquire() as conn:
+            await conn.copy_records_to_table(
+                "items_new",
+                records=records,
+                columns=["id", "name", "short_description", "item_tags"]
+            )
 
     await interaction.followup.send(f"Fetched {len(records)} items.")
 
