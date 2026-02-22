@@ -24,7 +24,6 @@ class ReportCommands(commands.Cog):
                     item_name,
                     quantity AS stock_qty
                 FROM inventory
-                GROUP BY server_id, item_name
             )
             SELECT
                 r.item_name,
@@ -206,7 +205,7 @@ class ReportCommands(commands.Cog):
         )
 
     @app_commands.command(name="inventory", description="View inventory report")
-    async def inventory_report(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
+    async def inventory_report(self, interaction: discord.Interaction):
         server_id = str(interaction.guild.id)
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""

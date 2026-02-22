@@ -144,7 +144,7 @@ class Bot(commands.Bot):
         )
 
         # --- Get totals ---
-        async with self.pool.acquire() as conn:
+        async with conn:
             rows = await conn.fetch("""
                 SELECT d.user_id,
                     SUM(d.quantity * i.donation_value) AS total_value
@@ -194,10 +194,12 @@ class Bot(commands.Bot):
 
         if not channel_name:
             # No scoreboard configured
+            print("no channel_name")
             return
 
         channel = self.get_channel(int(channel_name))
         if not channel:
+            print("no channel")
             return
 
         if message_name is None:
