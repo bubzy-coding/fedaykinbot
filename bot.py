@@ -256,30 +256,6 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
 #Discord Operations requiring @bot
 bot = Bot()
 
-@bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
-@app_commands.checks.has_permissions(administrator=True)
-async def set_scoreboard_channel(
-    interaction: discord.Interaction,
-    channel: discord.TextChannel
-):
-    server_id = str(interaction.guild.id)
-
-    async with bot.pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO bot_settings (server_id, scoreboard_channel, scoreboard_message)
-            VALUES ($1, $2, NULL)
-            ON CONFLICT (server_id)
-            DO UPDATE SET
-                channel_id = EXCLUDED.channel_id,
-                message_id = NULL
-        """, server_id, str(channel.id))
-
-    await interaction.response.send_message(
-        f"Scoreboard channel set to {channel.mention}. "
-        "A new scoreboard message will be created on the next update.",
-        ephemeral=True
-    )
-
 #process messages in donation channel
 @bot.event
 async def on_message(message: discord.Message):
@@ -336,6 +312,30 @@ async def on_message(message: discord.Message):
             "\n".join(results)
         )
     await bot.process_commands(message)
+
+@bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
+@app_commands.checks.has_permissions(administrator=True)
+async def set_scoreboard_channel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    server_id = str(interaction.guild.id)
+
+    async with bot.pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO bot_settings (server_id, scoreboard_channel, scoreboard_message)
+            VALUES ($1, $2, NULL)
+            ON CONFLICT (server_id)
+            DO UPDATE SET
+                channel_id = EXCLUDED.channel_id,
+                message_id = NULL
+        """, server_id, str(channel.id))
+
+    await interaction.response.send_message(
+        f"Scoreboard channel set to {channel.mention}. "
+        "A new scoreboard message will be created on the next update.",
+        ephemeral=True
+    )
 
 @bot.tree.command(name="set_donation_ichannel", description="set the input channel for donations")
 @app_commands.describe(channel="Channel where users submit donations")
