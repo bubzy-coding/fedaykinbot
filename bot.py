@@ -327,6 +327,7 @@ async def set_scoreboard_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
+    await interaction.response.defer(ephemeral=True)
     server_id = interaction.guild.id
 
     async with bot.pool.acquire() as conn:
@@ -339,8 +340,9 @@ async def set_scoreboard_channel(
                 scoreboard_message = NULL
         """, server_id, str(channel.id))
     
-    bot.bot_settings[server_id]["scoreboard_channel"] = int(server_id)
-    await interaction.response.send_message(
+    bot.bot_settings[server_id]["scoreboard_channel"] = str(channel.id)
+    
+    await interaction.followup.send(
         f"Scoreboard channel set to {channel.mention}. "
         "A new scoreboard message will be created on the next update.",
         ephemeral=True
