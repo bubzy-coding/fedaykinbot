@@ -271,7 +271,7 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
     
-    settings = bot.bot_settings.get(message.guild.id)
+    settings = bot.bot_settings.get(str(message.guild.id))
     if not settings:
         return
 
@@ -283,7 +283,7 @@ async def on_message(message: discord.Message):
         return
 
     lines = message.content.splitlines()
-
+    did_modify = False
     results = []
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -311,11 +311,13 @@ async def on_message(message: discord.Message):
                     elif symbol == "$":
                         results.append(f"Set donation value of **{guess}** to {qty}")
                     await handle_db(symbol, qty, guess, message, conn)
-                    await bot.update_scoreboard(message, conn)
+                    did_modify = True
                 else:
                     results.append(f"{qty:+} `{item_text}` → ❌ No match")
-    
+    if did_modify:
+        await bot.update_scoreboard(message, conn)
     if results:
+        
         await output_channel.send(
             f"Recorded the following Transactions from {message.author.mention}:\n" +
             "\n".join(results)
@@ -341,7 +343,10 @@ async def set_scoreboard_channel(
                 scoreboard_message = NULL
         """, server_id, str(channel.id))
     
-    bot.bot_settings[server_id]["scoreboard_channel"] = str(channel.id)
+    server_id_str = str(server_id)
+    settings = bot.bot_settings.setdefault(server_id_str, {})
+    settings["scoreboard_channel"] = str(channel.id)
+    settings["scoreboard_message"] = None
     
     await interaction.followup.send(
         f"Scoreboard channel set to {channel.mention}. "
