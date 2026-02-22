@@ -390,6 +390,7 @@ async def sync_items(interaction: discord.Interaction):
         ))
 
         async with pool.acquire() as conn:
+            await conn.execute("TRUNCATE TABLE items;")
             await conn.copy_records_to_table(
                 "items_new",
                 records=records,
