@@ -8,7 +8,6 @@ import re
 from datetime import datetime, timezone, timedelta
 import aiohttp
 
-
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
 
@@ -255,7 +254,7 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
             INSERT INTO donation_values (server_id, item_name, donation_value)
             VALUES ($1, $2, $3)
             ON CONFLICT (server_id, item_name)
-            DO UPDATE SET donate_value = EXCLUDED.donate_value
+            DO UPDATE SET donation_value = EXCLUDED.donation_value
         """, server_id, item_name, qty)
     
     elif symbol == "!":
@@ -339,7 +338,7 @@ async def on_message(message: discord.Message):
             "\n".join(results)
         )
 
-@bot.tree.command(name="set_donation_ichannel")
+@bot.tree.command(name="set_donation_ichannel", description="set the input channel for donations")
 @app_commands.describe(channel="Channel where users submit donations")
 async def set_donation_ichannel(
     interaction: discord.Interaction,
@@ -368,7 +367,7 @@ async def set_donation_ichannel(
         ephemeral=True
     )
 
-@bot.tree.command(name="set_donation_ochannel")
+@bot.tree.command(name="set_donation_ochannel", description="set the output channel for donations")
 @app_commands.describe(channel="Channel where guesses are posted")
 async def set_donation_ochannel(
     interaction: discord.Interaction,
@@ -398,9 +397,9 @@ async def set_donation_ochannel(
     )
 
 #    
-import json
 
-@bot.tree.command(name="sync_items")
+
+@bot.tree.command(name="sync_items", description="collect item list from dune wiki (use sparingly)")
 async def sync_items(interaction: discord.Interaction):
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
