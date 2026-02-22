@@ -43,10 +43,10 @@ async def fetch_all_items():
                 resp.raise_for_status()
                 data = await resp.json()
 
-            if not data:
+            if not data["list"]:
                 break
 
-            all_items.extend(data)
+            all_items.extend(data["list"])
 
             if len(data) < LIMIT:
                 break
