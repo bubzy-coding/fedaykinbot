@@ -118,7 +118,7 @@ class Bot(commands.Bot):
         print("Bot ready")
 
     async def on_ready(self):
-        async with pool.acquire() as conn:
+        async with self.pool.acquire() as conn:
             rows = await conn.fetch("SELECT * FROM bot_settings")
             self.bot_settings = {
                 row["server_id"]: {
@@ -129,6 +129,7 @@ class Bot(commands.Bot):
                 }
                 for row in rows
             }
+            print("Loaded bot_settings:", self.bot_settings)
 
     async def update_scoreboard(self, ctx, conn):
         guild = ctx.guild
@@ -268,6 +269,7 @@ bot = Bot()
 #process messages in donation channel
 @bot.event
 async def on_message(message: discord.Message):
+    
     if message.author.bot:
         return
     
@@ -277,13 +279,16 @@ async def on_message(message: discord.Message):
 
     input_channel = settings.get("input")
     if not input_channel:
+        print(f"No input channel???")
         return
     
     if message.channel.id != int(input_channel):
+        print("message not in correct channel")
         return
 
     output_channel = bot.get_channel(int(settings.get("output")))
     if not output_channel:
+        print("no output channel")
         return
 
     lines = message.content.splitlines()
