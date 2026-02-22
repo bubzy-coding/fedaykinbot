@@ -129,10 +129,10 @@ class Bot(commands.Bot):
             }
 
     async def update_scoreboard(self, ctx, conn):
-        guild = str(ctx.guild)
+        guild = ctx.guild
         if guild is None:
             return
-        server_id = guild.id
+        server_id = str(guild.id)
 
         # --- Calculate start of current Tuesday ---
         now = datetime.now(timezone.utc)
