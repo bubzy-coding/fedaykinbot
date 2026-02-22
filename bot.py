@@ -144,19 +144,19 @@ class Bot(commands.Bot):
         )
 
         # --- Get totals ---
-        async with conn:
-            rows = await conn.fetch("""
-                SELECT d.user_id,
-                    SUM(d.quantity * i.donation_value) AS total_value
-                    FROM donations d
-                    JOIN donation_values i ON d.item = i.item_name
-                    WHERE d.server_id = $1
-                        AND d.donation_date >= $2
-                        AND NOT d.is_adjustment
-                        AND i.server_id = $3
-                    GROUP BY d.user_id
-                    ORDER BY total_value DESC;
-            """, server_id, period_start, int(server_id))
+    
+        rows = await conn.fetch("""
+            SELECT d.user_id,
+                SUM(d.quantity * i.donation_value) AS total_value
+                FROM donations d
+                JOIN donation_values i ON d.item = i.item_name
+                WHERE d.server_id = $1
+                    AND d.donation_date >= $2
+                    AND NOT d.is_adjustment
+                    AND i.server_id = $3
+                GROUP BY d.user_id
+                ORDER BY total_value DESC;
+        """, server_id, period_start, int(server_id))
 
         # --- Build content ---
         if not rows:
@@ -206,12 +206,12 @@ class Bot(commands.Bot):
             # Channel set but message not created yet
             message = await channel.send(content)
 
-            async with conn:
-                await conn.execute("""
-                    UPDATE bot_settings
-                    SET scoreboard_message = $1
-                    WHERE server_id = $2
-                """, str(message.id), int(server_id))
+
+            await conn.execute("""
+                UPDATE bot_settings
+                SET scoreboard_message = $1
+                WHERE server_id = $2
+            """, str(message.id), int(server_id))
         else:
             try:
                 message = await channel.fetch_message(int(message_name))
@@ -220,12 +220,11 @@ class Bot(commands.Bot):
                 # Message deleted manually, recreate
                 message = await channel.send(content)
 
-                async with conn:
-                    await conn.execute("""
-                        UPDATE bot_settings
-                        SET scoreboard_message = $1
-                        WHERE server_id = $2
-                    """, str(message.id), int(server_id))
+                await conn.execute("""
+                    UPDATE bot_settings
+                    SET scoreboard_message = $1
+                    WHERE server_id = $2
+                """, str(message.id), int(server_id))
 
 
 async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
