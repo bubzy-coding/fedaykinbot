@@ -377,16 +377,17 @@ async def sync_items(interaction: discord.Interaction):
     await interaction.response.defer()
 
     items = await fetch_all_items()
+    records = []
+    for item in items:
+        tags = item.get("item_tags")
+        parsed_tags = json.loads(tags) if isinstance(tags, str) else []
 
-    records = [
-        (
+        records.append((
             item["Id"],
             item["name"],
             item["short_description"],
-            json.loads(item["item_tags"])
-        )
-        for item in items
-    ]
+            parsed_tags
+        ))
 
     async with pool.acquire() as conn:
         await conn.copy_records_to_table(
