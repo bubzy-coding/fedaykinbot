@@ -21,7 +21,7 @@ ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern_qty = re.compile(r"^([+\-$])\s*(\d+)\s+(.+)$")
+line_pattern_qty = re.compile(r"^([+\-$~])\s*(\d+)\s+(.+)$")
 line_pattern_toggle = re.compile(r"^(!)\s+(.+)$")
 
 async def fetch_all_items():
@@ -71,13 +71,6 @@ def parse_line(line: str):
             qty = -qty
 
         return symbol, qty, item_text.strip()
-
-    # Toggle operation
-    match = line_pattern_toggle.match(line)
-    if match:
-        symbol, item_text = match.groups()
-        return symbol, None, item_text.strip()
-
     return None
 
 
@@ -255,7 +248,7 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
             VALUES ($1, $2, $3)
             ON CONFLICT (server_id, item_name)
             DO UPDATE SET donation_value = EXCLUDED.donation_value
-        """, server_id, item_name, qty)
+        """, int(server_id), item_name, qty)
     
     elif symbol == "!":
         pass
