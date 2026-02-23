@@ -25,7 +25,7 @@ ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern_qty = re.compile(r"^([+\-$~])\s*(\d+)\s+(.+)$")
+line_pattern_qty = re.compile(r"^([<+\-$~])\s*(\d+)\s+(.+)$")
 
 async def fetch_all_items():
     offset = 0
@@ -260,6 +260,7 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
             DO UPDATE SET quantity = EXCLUDED.quantity
         """, server_id, item_name, qty)
 
+    #set values
     elif symbol == "$":
         await conn.execute("""
             INSERT INTO donation_values (server_id, item_name, donation_value)
@@ -268,7 +269,14 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
             DO UPDATE SET donation_value = EXCLUDED.donation_value
         """, int(server_id), item_name, qty)
     
-    elif symbol == "!":
+    #required items
+    elif symbol == "<":
+        await conn.execute("""
+            INSERT INTO required_items (server_id, item_name, required_quantity)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (server_id, item_name)
+            DO UPDATE SET required_quantity = EXCLUDED.required_quantity
+        """, int(server_id), item_name, qty)
         pass
 
 #Discord Operations requiring @bot
@@ -312,9 +320,9 @@ async def on_message(message: discord.Message):
                     continue
 
                 symbol, qty, item_text = parsed
-                if symbol in ("~", "$", "!"):
+                if symbol in ("~", "$", "<"):
                     if not message.author.guild_permissions.administrator:
-                        results.append("❌ You are not allowed to use ~")
+                        results.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
                         continue
 
                 guess = guess_item(item_text)
@@ -328,6 +336,8 @@ async def on_message(message: discord.Message):
                         results.append(f"Adjusted total quantity of **{guess}** to {qty}")
                     elif symbol == "$":
                         results.append(f"Set donation value of **{guess}** to {qty}")
+                    elif symbol == "<":
+                        results.append(f"Set required quantity of **{guess}** to {qty}")
                     await handle_db(symbol, qty, guess, message, conn)
                     did_modify = True
                 else:
