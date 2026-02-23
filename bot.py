@@ -219,6 +219,7 @@ class Bot(commands.Bot):
                 SET scoreboard_message = $1
                 WHERE server_id = $2
             """, message.id, server_id)
+            self.bot_settings[server_id]["scoreboard_message"] = message.id
         else:
             try:
                 message = await channel.fetch_message(int(message_name))
@@ -232,6 +233,7 @@ class Bot(commands.Bot):
                     SET scoreboard_message = $1
                     WHERE server_id = $2
                 """, message.id, server_id)
+                self.bot_settings[server_id]["scoreboard_message"] = message.id
 
 
 async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
