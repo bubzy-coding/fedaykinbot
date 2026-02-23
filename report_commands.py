@@ -3,6 +3,7 @@ from discord import app_commands
 from discord.ext import commands
 from io import BytesIO
 from datetime import datetime, timezone, timedelta
+from 
 
 class ReportCommands(commands.Cog):
     def __init__(self, bot):
@@ -15,7 +16,7 @@ class ReportCommands(commands.Cog):
     @app_commands.command(name="show_required", description="Show required items vs current stock")
     async def show_required(self, interaction: discord.Interaction):
 
-        server_id = str(interaction.guild.id)
+        server_id = interaction.guild.id
 
         query = """
             WITH current_inventory AS (
@@ -98,10 +99,38 @@ class ReportCommands(commands.Cog):
 
         await interaction.response.send_message("\n".join(lines))
 
+    @app_commands.command(name="show_donation_values", description="View donation report")
+    async def report_user(self, interaction: discord.Interaction):
+        server_id = interaction.guild.id
+        await interaction.response.defer()
+        async with self.pool.acquire() as conn:
+           rows = await conn.fetch("""
+                SELECT 
+                item_name, donation_value
+                FROM donation_values
+                WHERE server_id = $1
+                AND donation_value IS NOT NULL
+                ORDER BY donation_value desc
+            """, server_id)
+        settings = self.bot_settings.get(server_id)
+        if not settings:
+            return
+        output_channel = self.bot.get_channel(int(settings.get("output")))
+        if not output_channel:
+            return
+        
+        if not rows:
+            message=f"No donation values configured" 
+        else: 
+            message = (f"Item donation values set as follows:\n" 
+                       + "\n".join(f"{r['item_name']} - {r['donation_value']}" for r in rows))
+        
+        await output_channel.send(message)
+        
 
     @app_commands.command(name="report_user", description="View donation report")
     async def report_user(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
-        server_id = str(interaction.guild.id)
+        server_id = interaction.guild.id
 
         query = """
             SELECT user_id, item, SUM(quantity) AS total_quantity
@@ -148,7 +177,7 @@ class ReportCommands(commands.Cog):
     @app_commands.command(name="report_user_file", description="View donation report")
     @app_commands.checks.has_permissions(administrator=True)
     async def report_user_file(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
-        server_id = str(interaction.guild.id)
+        server_id = interaction.guild.id
 
         query = """
             SELECT user_id, item, SUM(quantity) AS total_quantity
@@ -206,7 +235,7 @@ class ReportCommands(commands.Cog):
 
     @app_commands.command(name="inventory", description="View inventory report")
     async def inventory_report(self, interaction: discord.Interaction):
-        server_id = str(interaction.guild.id)
+        server_id = interaction.guild.id
         async with self.pool.acquire() as conn:
             rows = await conn.fetch("""
             SELECT item_name, quantity
@@ -249,7 +278,7 @@ class ReportCommands(commands.Cog):
                 FROM inventory
                 WHERE server_id = $1
                 ORDER BY item_name asc
-            """, str(interaction.guild.id))
+            """, interaction.guild.id)
 
         if not rows:
             await interaction.response.send_message("No inventory.", ephemeral=True)
@@ -266,7 +295,7 @@ class ReportCommands(commands.Cog):
         )
 
         await interaction.response.send_message(
-            "Here’s your inventory export:",
+            "Here is your inventory export:",
             file=file
         )
 
