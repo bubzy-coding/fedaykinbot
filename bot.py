@@ -278,7 +278,7 @@ async def on_message(message: discord.Message):
     if message.author.bot:
         return
     
-    settings = bot.bot_settings.get(str(message.guild.id))
+    settings = bot.bot_settings.get((message.guild.id))
     if not settings:
         logging.info("no settings loaded")
         return
@@ -359,8 +359,7 @@ async def set_scoreboard_channel(
                 scoreboard_message = NULL
         """, server_id, str(channel.id))
     
-    server_id_str = str(server_id)
-    settings = bot.bot_settings.setdefault(server_id_str, {})
+    settings = bot.bot_settings.setdefault(server_id, {})
     settings["scoreboard_channel"] = str(channel.id)
     settings["scoreboard_message"] = None
     
