@@ -109,6 +109,7 @@ class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.message_content = True
+        intents.members = True
         super().__init__(command_prefix="!", intents=intents)
         #self.tree = app_commands.CommandTree(self)
         self.bot_settings = {}
