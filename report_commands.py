@@ -88,11 +88,19 @@ class ReportCommands(commands.Cog):
         lines.append(separator)
 
         for r in rows:
+
+            item_name = r['item_name']
+            required_quantity = r['required_quantity']
+            stock_qty = max(0, r['stock_qty'])
+            remaining = max(0, r['remaining'])
+            if required_quantity == 0:
+                continue
+            
             lines.append(
-                f"{r['item_name'].ljust(max_item_len)} | "
-                f"{str(r['required_quantity']).rjust(max_req_len)} | "
-                f"{str(r['stock_qty']).rjust(max_stock_len)} | "
-                f"{str(r['remaining']).rjust(max_rem_len)}"
+                f"{item_name.ljust(max_item_len)} | "
+                f"{str(required_quantity).rjust(max_req_len)} | "
+                f"{str(stock_qty).rjust(max_stock_len)} | "
+                f"{str(remaining).rjust(max_rem_len)}"
             )
 
         lines.append("```")
