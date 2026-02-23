@@ -320,8 +320,8 @@ async def on_message(message: discord.Message):
                     continue
 
                 symbol, qty, item_text = parsed
-                if symbol not in ("~", "$", "+", "-", "<"):
-                    return
+                # if symbol not in ("~", "$", "+", "-", "<"):
+                #     return
                 if symbol in ("~", "$", "<"):
                     if not message.author.guild_permissions.administrator:
                         results.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
@@ -344,7 +344,7 @@ async def on_message(message: discord.Message):
                         await handle_db(symbol, qty, guess, message, conn)
                         did_modify = True
                     else:
-                        results.append(f"entered {item_text}, this is not an exact item match, did you mean {guess}? please reenter the line `{symbol}{qty} {guess} if this is correct")
+                        results.append(f"Entered `{item_text}`, this is not an item match, did you mean `{guess}`? Please resubmit `{symbol}{qty} {guess}` if this is correct")
                 else:
                     results.append(f"{qty:+} `{item_text}` → ❌ No match")
         if did_modify:

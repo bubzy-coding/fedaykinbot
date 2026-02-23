@@ -100,7 +100,7 @@ class ReportCommands(commands.Cog):
         await interaction.response.send_message("\n".join(lines))
 
     @app_commands.command(name="show_donation_values", description="View donation report")
-    async def report_user(self, interaction: discord.Interaction):
+    async def show_donation_values(self, interaction: discord.Interaction):
         server_id = interaction.guild.id
         await interaction.response.defer()
         async with self.pool.acquire() as conn:
@@ -122,8 +122,9 @@ class ReportCommands(commands.Cog):
         if not rows:
             message=f"No donation values configured" 
         else: 
-            message = (f"Item donation values set as follows:\n" 
-                       + "\n".join(f"{r['item_name']} - {r['donation_value']}" for r in rows))
+            message = (f"Item donation values set as follows:\n" + "```"
+                       + "\n".join(f"{r['item_name']} - {r['donation_value']}" for r in rows)
+                       + "```")
         
         await output_channel.send(message)
         
