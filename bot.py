@@ -140,7 +140,7 @@ class Bot(commands.Bot):
         guild = ctx.guild
         if guild is None:
             return
-        server_id = str(guild.id)
+        server_id = guild.id
 
         # --- Calculate start of current Tuesday ---
         now = datetime.now(timezone.utc)
@@ -162,7 +162,7 @@ class Bot(commands.Bot):
                     AND i.server_id = $3
                 GROUP BY d.user_id
                 ORDER BY total_value DESC;
-        """, server_id, period_start, int(server_id))
+        """, server_id, period_start, server_id)
 
         # --- Build content ---
         if not rows:
@@ -217,7 +217,7 @@ class Bot(commands.Bot):
                 UPDATE bot_settings
                 SET scoreboard_message = $1
                 WHERE server_id = $2
-            """, str(message.id), int(server_id))
+            """, message.id, server_id)
         else:
             try:
                 message = await channel.fetch_message(int(message_name))
@@ -230,11 +230,11 @@ class Bot(commands.Bot):
                     UPDATE bot_settings
                     SET scoreboard_message = $1
                     WHERE server_id = $2
-                """, str(message.id), int(server_id))
+                """, message.id, server_id)
 
 
 async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
-    server_id = str(message.guild.id)
+    server_id = message.guild.id
     
     if symbol in ("+", "-"):
         await conn.execute("""
@@ -357,10 +357,10 @@ async def set_scoreboard_channel(
             DO UPDATE SET
                 scoreboard_channel = EXCLUDED.scoreboard_channel,
                 scoreboard_message = NULL
-        """, server_id, str(channel.id))
+        """, server_id, channel.id)
     
     settings = bot.bot_settings.setdefault(server_id, {})
-    settings["scoreboard_channel"] = str(channel.id)
+    settings["scoreboard_channel"] = channel.id
     settings["scoreboard_message"] = None
     
     await interaction.followup.send(
