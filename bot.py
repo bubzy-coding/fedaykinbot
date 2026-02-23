@@ -274,12 +274,13 @@ bot = Bot()
 #process messages in donation channel
 @bot.event
 async def on_message(message: discord.Message):
-    logging.info("MESSAGE:", message.content)
+    
     if message.author.bot:
         return
     
     settings = bot.bot_settings.get(str(message.guild.id))
     if not settings:
+        logging.info("no settings loaded")
         return
 
     input_channel = settings.get("input")
