@@ -250,15 +250,15 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
         if item_row is None:
             return  # or handle missing item
 
-        if symbol == "-" and item_row["quantity"] - qty <0:
-            discrepancy_text = f"{message.author.display_name} attempted withdrawal: {qty} of {item_name}, {item_row["quantity"]} in inventory, transaction adjusted"
+        if symbol == "-" and item_row["quantity"] + qty <0:
+            discrepancy_text = f"{message.author.display_name} attempted withdrawal: {qty} of {item_name}, {item_row['quantity']} in inventory, transaction adjusted"
             now = datetime.now(timezone.utc)
             await conn.execute("""
                 INSERT INTO discrepancies (server_id, discrepancy_text, date_timestamp)
                 VALUES ($1, $2, $3)           
             """, server_id, discrepancy_text, now)
 
-            qty = min(qty, item_row["quantity"])
+            qty = -item_row["quantity"]
 
         await conn.execute("""
             INSERT INTO inventory (server_id, item_name, quantity)
@@ -376,11 +376,7 @@ async def on_message(message: discord.Message):
         )
     await bot.process_commands(message)
 
-@bot.tree.command(
-    name="show_discrepancies",
-    description="show any transactions that would take inventory below 0"
-)
-
+@bot.tree.command(name="show_discrepancies",description="show any transactions that would take inventory below 0")
 @app_commands.checks.has_permissions(administrator=True)
 async def show_discrepancies(interaction: discord.Interaction, fetch_rows: int = 20):
 
