@@ -240,6 +240,26 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
     server_id = message.guild.id
     
     if symbol in ("+", "-"):
+        item_row = await conn.fetchrow("""
+        SELECT quantity
+        FROM inventory
+        WHERE server_id = $1
+        AND item_name = $2
+    """, server_id, item_name)
+
+        if item_row is None:
+            return  # or handle missing item
+
+        if symbol == "-" and item_row["quantity"] - qty <0:
+            discrepancy_text = f"{message.author.display_name} attempted withdrawal: {qty} of {item_name}, {item_row["quantity"]} in inventory, transaction adjusted"
+            now = datetime.now(timezone.utc)
+            await conn.execute("""
+                INSERT INTO discrepancies (server_id, discrepancy_text, date_timestamp)
+                VALUES ($1, $2, $3)           
+            """, server_id, discrepancy_text, now)
+
+            qty = min(qty, item_row["quantity"])
+
         await conn.execute("""
             INSERT INTO inventory (server_id, item_name, quantity)
             VALUES ($1, $2, $3)
@@ -320,8 +340,7 @@ async def on_message(message: discord.Message):
                     continue
 
                 symbol, qty, item_text = parsed
-                # if symbol not in ("~", "$", "+", "-", "<"):
-                #     return
+                
                 if symbol in ("~", "$", "<"):
                     if not message.author.guild_permissions.administrator:
                         results.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
@@ -357,13 +376,46 @@ async def on_message(message: discord.Message):
         )
     await bot.process_commands(message)
 
+@bot.tree.command(name="show_discrepancies", description="show any transactions that would take inventory below 0")
+@app_commands.checks.has_permissions(administrator=True)
+async def show_discrepancies(interaction:discord.Interaction, fetch_rows=20):
+    server_id = interaction.guild.id
+    async with bot.pool.acquire() as conn:
+        rows = await conn.fetch("""
+        SELECT * FROM discrepancies
+        where server_id = $1
+        ORDER BY date_timestamp desc
+        LIMIT $2
+                                   
+        """,server_id, fetch_rows)
+    if not rows:
+        await interaction.followup.send(
+            "No discrepancies recorded.",
+            ephemeral=True
+        )
+        return
+    text_end = "items" if len(rows) != 1 else "item"
+
+    lines = [
+        f"{r['discrepancy_text']} — {r['date_timestamp']}"
+        for r in rows
+    ]
+
+    message = (
+        f"Discrepancy report: last {len(rows)} {text_end}\n\n"
+        + "\n".join(lines)
+    )
+    await interaction.followup.send(
+        message,
+        ephemeral=True
+    )
+
 @bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
 @app_commands.checks.has_permissions(administrator=True)
 async def set_scoreboard_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
-    logging.info("WHAT THOUGH")
     await interaction.response.defer(ephemeral=True)
     server_id = interaction.guild.id
 
