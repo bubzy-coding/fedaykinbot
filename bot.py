@@ -376,24 +376,33 @@ async def on_message(message: discord.Message):
         )
     await bot.process_commands(message)
 
-@bot.tree.command(name="show_discrepancies", description="show any transactions that would take inventory below 0")
+@bot.tree.command(
+    name="show_discrepancies",
+    description="show any transactions that would take inventory below 0"
+)
+
 @app_commands.checks.has_permissions(administrator=True)
-async def show_discrepancies(interaction:discord.Interaction, fetch_rows=20):
+async def show_discrepancies(interaction: discord.Interaction, fetch_rows: int = 20):
+
+    await interaction.response.defer(ephemeral=True)
+
     server_id = interaction.guild.id
+
     async with bot.pool.acquire() as conn:
         rows = await conn.fetch("""
-        SELECT * FROM discrepancies
-        where server_id = $1
-        ORDER BY date_timestamp desc
-        LIMIT $2
-                                   
-        """,server_id, fetch_rows)
+            SELECT discrepancy_text, date_timestamp
+            FROM discrepancies
+            WHERE server_id = $1
+            ORDER BY date_timestamp DESC
+            LIMIT $2
+        """, server_id, fetch_rows)
+
     if not rows:
         await interaction.followup.send(
-            "No discrepancies recorded.",
-            ephemeral=True
+            "No discrepancies recorded."
         )
         return
+
     text_end = "items" if len(rows) != 1 else "item"
 
     lines = [
@@ -405,10 +414,8 @@ async def show_discrepancies(interaction:discord.Interaction, fetch_rows=20):
         f"Discrepancy report: last {len(rows)} {text_end}\n\n"
         + "\n".join(lines)
     )
-    await interaction.followup.send(
-        message,
-        ephemeral=True
-    )
+
+    await interaction.followup.send(message)
 
 @bot.tree.command(name="set_scoreboard_channel",description="Set the channel where the weekly scoreboard will be posted")
 @app_commands.checks.has_permissions(administrator=True)
