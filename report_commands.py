@@ -277,7 +277,7 @@ class ReportCommands(commands.Cog):
 
         content = ("\n".join(lines))
         if len(content) > 1800:
-            content = content[:1800] + "\n\nhit message limit! use /inventory_file"
+            content = content[:1800] + "```\n\nhit message limit! use /inventory_file"
 
         await interaction.response.send_message(content)
     
