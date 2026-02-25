@@ -162,7 +162,7 @@ class ReportCommands(commands.Cog):
             params.append(end_date)
             idx += 1
 
-        query += " GROUP BY user_id, item ORDER BY user_id, item"
+        query += " GROUP BY user_id, item ORDER BY user_id, item LIMIT 20"
 
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(query, *params)
@@ -274,6 +274,10 @@ class ReportCommands(commands.Cog):
             lines.append(f"{item_name.ljust(max_item_len)} | {str(qty).rjust(max_qty_len)}")
 
         lines.append("```")
+
+        content = ("\n".join(lines))
+        if len(content) > 2000:
+            content = content[:1900] + "\nhit message limit! use /inventory_file"
 
         await interaction.response.send_message("\n".join(lines))
     

@@ -169,7 +169,7 @@ class Bot(commands.Bot):
         if not rows:
             content = "🏆 **Weekly Scoreboard (since Tuesday)**\n\nNo donations yet."
         else:
-            lines = ["🏆 **Weekly Scoreboard (since Tuesday)**\n"]
+            lines = [f"🏆 **Weekly Scoreboard (since Tuesday)** -updated {datetime.now(timezone.utc)}UTC\n"]
 
             for rank, row in enumerate(rows, start=1):
                 user_id = int(row["user_id"])
@@ -321,9 +321,9 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     elif symbol == "$":
         await conn.execute("""
             INSERT INTO donation_values (server_id, item_name, donation_value)
-            VALUES ($1, $2, $3)
+            VALUES ($1, $2, NULLIF($3, 0))
             ON CONFLICT (server_id, item_name)
-            DO UPDATE SET donation_value = EXCLUDED.donation_value
+            DO UPDATE SET donation_value = NULLIF(EXCLUDED.donation_value, 0);
         """, server_id, item_name, qty)
 
     # -----------------------------
@@ -336,7 +336,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
             ON CONFLICT (server_id, item_name)
             DO UPDATE SET required_quantity = EXCLUDED.required_quantity
         """, server_id, item_name, qty)
-        
+
 #Discord Operations requiring @bot
 bot = Bot()
 
