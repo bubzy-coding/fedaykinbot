@@ -236,42 +236,77 @@ class Bot(commands.Bot):
                 self.bot_settings[server_id]["scoreboard_message"] = message.id
 
 
-async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
+async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     server_id = message.guild.id
-    
+    user_id = message.author.id
+    now = datetime.now(timezone.utc)
+
+    # -----------------------------
+    # + and - (atomic inventory update)
+    # -----------------------------
     if symbol in ("+", "-"):
-        item_row = await conn.fetchrow("""
-        SELECT quantity
-        FROM inventory
-        WHERE server_id = $1
-        AND item_name = $2
-    """, server_id, item_name)
 
-        if item_row is None:
-            return  # or handle missing item
-
-        if symbol == "-" and item_row["quantity"] + qty <0:
-            discrepancy_text = f"{message.author.display_name} attempted withdrawal: {qty} of {item_name}, {item_row['quantity']} in inventory, transaction adjusted"
-            now = datetime.now(timezone.utc)
-            await conn.execute("""
-                INSERT INTO discrepancies (server_id, discrepancy_text, date_timestamp)
-                VALUES ($1, $2, $3)           
-            """, server_id, discrepancy_text, now)
-
-            qty = -item_row["quantity"]
-
-        await conn.execute("""
-            INSERT INTO inventory (server_id, item_name, quantity)
-            VALUES ($1, $2, $3)
-            ON CONFLICT (server_id, item_name)
-            DO UPDATE SET quantity = inventory.quantity + EXCLUDED.quantity
+        # Try atomic update (prevents negative inventory)
+        row = await conn.fetchrow("""
+            UPDATE inventory
+            SET quantity = quantity + $3
+            WHERE server_id = $1
+              AND item_name = $2
+              AND quantity + $3 >= 0
+            RETURNING quantity
         """, server_id, item_name, qty)
-        now = datetime.now(timezone.utc)
+
+        if row is None:
+            # Withdrawal would go negative OR item missing
+            if symbol == "-":
+                current = await conn.fetchval("""
+                    SELECT quantity
+                    FROM inventory
+                    WHERE server_id = $1
+                      AND item_name = $2
+                """, server_id, item_name)
+
+                if current is not None:
+                    # Clamp to zero
+                    await conn.execute("""
+                        UPDATE inventory
+                        SET quantity = 0
+                        WHERE server_id = $1
+                          AND item_name = $2
+                    """, server_id, item_name)
+
+                    discrepancy_text = (
+                        f"{message.author.display_name} attempted withdrawal: "
+                        f"{abs(qty)} of {item_name}, {current} in inventory, adjusted to 0"
+                    )
+
+                    await conn.execute("""
+                        INSERT INTO discrepancies (server_id, discrepancy_text, date_timestamp)
+                        VALUES ($1, $2, $3)
+                    """, server_id, discrepancy_text, now)
+
+                    qty = -current  # actual deducted amount
+
+                else:
+                    # Item not found at all
+                    return
+
+            else:
+                # If + and no row updated, item likely doesn't exist
+                await conn.execute("""
+                    INSERT INTO inventory (server_id, item_name, quantity)
+                    VALUES ($1, $2, $3)
+                """, server_id, item_name, qty)
+
+        # Record donation/withdrawal
         await conn.execute("""
             INSERT INTO donations (server_id, user_id, item, quantity, donation_date, is_adjustment)
-            VALUES ($1, $2, $3, $4, $5, $6)
-        """, server_id, message.author.id, item_name, qty, now, False)
+            VALUES ($1, $2, $3, $4, $5, FALSE)
+        """, server_id, user_id, item_name, qty, now)
 
+    # -----------------------------
+    # ~ (absolute set inventory)
+    # -----------------------------
     elif symbol == "~":
         await conn.execute("""
             INSERT INTO inventory (server_id, item_name, quantity)
@@ -280,25 +315,28 @@ async def handle_db(symbol, qty, item_name,  message: discord.Message, conn):
             DO UPDATE SET quantity = EXCLUDED.quantity
         """, server_id, item_name, qty)
 
-    #set values
+    # -----------------------------
+    # $ (set donation value)
+    # -----------------------------
     elif symbol == "$":
         await conn.execute("""
             INSERT INTO donation_values (server_id, item_name, donation_value)
             VALUES ($1, $2, $3)
             ON CONFLICT (server_id, item_name)
             DO UPDATE SET donation_value = EXCLUDED.donation_value
-        """, int(server_id), item_name, qty)
-    
-    #required items
+        """, server_id, item_name, qty)
+
+    # -----------------------------
+    # < (set required quantity)
+    # -----------------------------
     elif symbol == "<":
         await conn.execute("""
             INSERT INTO required_items (server_id, item_name, required_quantity)
             VALUES ($1, $2, $3)
             ON CONFLICT (server_id, item_name)
             DO UPDATE SET required_quantity = EXCLUDED.required_quantity
-        """, int(server_id), item_name, qty)
-        pass
-
+        """, server_id, item_name, qty)
+        
 #Discord Operations requiring @bot
 bot = Bot()
 
@@ -366,10 +404,10 @@ async def on_message(message: discord.Message):
                         results.append(f"Entered `{item_text}`, this is not an item match, did you mean `{guess}`? Please resubmit `{symbol}{qty} {guess}` if this is correct")
                 else:
                     results.append(f"{qty:+} `{item_text}` → ❌ No match")
-        if did_modify:
+    if did_modify:
+        async with pool.acquire() as conn:
             await bot.update_scoreboard(message, conn)
     if results:
-        
         await output_channel.send(
             f"Recorded the following Transactions from {message.author.mention}:\n" +
             "\n".join(results)
