@@ -169,7 +169,7 @@ class Bot(commands.Bot):
         if not rows:
             content = "🏆 **Weekly Scoreboard (since Tuesday)**\n\nNo donations yet."
         else:
-            lines = [f"🏆 **Weekly Scoreboard (since Tuesday)** -updated {datetime.now(timezone.utc)}UTC\n"]
+            lines = [f"🏆 **Weekly Scoreboard (since Tuesday)** -updated {datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M")}UTC\n"]
 
             for rank, row in enumerate(rows, start=1):
                 user_id = int(row["user_id"])

@@ -276,10 +276,10 @@ class ReportCommands(commands.Cog):
         lines.append("```")
 
         content = ("\n".join(lines))
-        if len(content) > 2000:
-            content = content[:1900] + "\nhit message limit! use /inventory_file"
+        if len(content) > 1800:
+            content = content[:1800] + "\n\nhit message limit! use /inventory_file"
 
-        await interaction.response.send_message("\n".join(lines))
+        await interaction.response.send_message(content)
     
     
     @app_commands.command(name="inventory_file")
