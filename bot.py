@@ -415,8 +415,9 @@ async def on_message(message: discord.Message):
                 + "\n".join(failed)
             )
         except discord.Forbidden:
-            await message.channel.send(
-                f"{message.author.mention} I can't DM you. Enable DMs and try again."
+            await output_channel.send(
+                f"{message.author.mention} I can't DM you. so here are your transaction issues:\n" +
+                "\n".join(failed)
             )
     if results:
         await output_channel.send(
