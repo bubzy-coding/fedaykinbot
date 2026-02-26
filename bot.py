@@ -369,19 +369,20 @@ async def on_message(message: discord.Message):
     lines = message.content.splitlines()
     did_modify = False
     results = []
+    failed = []
     async with pool.acquire() as conn:
         async with conn.transaction():
             for line in lines:
                 parsed = parse_line(line)
                 if not parsed:
-                    results.append(f"`{line}` → ❌ Invalid format, use like this: `+90 Iron Ingot`")
+                    failed.append(f"`{line}` → ❌ Invalid format, use like this: `+90 Iron Ingot`")
                     continue
 
                 symbol, qty, item_text = parsed
                 
                 if symbol in ("~", "$", "<"):
                     if not message.author.guild_permissions.administrator:
-                        results.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
+                        failed.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
                         continue
 
                 guess = guess_item(item_text)
@@ -401,12 +402,22 @@ async def on_message(message: discord.Message):
                         await handle_db(symbol, qty, guess, message, conn)
                         did_modify = True
                     else:
-                        results.append(f"Entered `{item_text}`, this is not an item match, did you mean `{guess}`? Please resubmit `{symbol}{qty} {guess}` if this is correct")
+                        failed.append(f"Entered `{item_text}`, this is not an item match, did you mean `{guess}`? Please resubmit `{symbol}{qty} {guess}` if this is correct")
                 else:
-                    results.append(f"{qty:+} `{item_text}` → ❌ No match")
+                    failed.append(f"{qty:+} `{item_text}` → ❌ No match")
     if did_modify:
         async with pool.acquire() as conn:
             await bot.update_scoreboard(message, conn)
+    if failed:
+        try:
+            await message.author.send(
+                "The following issues happened with your command:\n\n"
+                + "\n".join(failed)
+            )
+        except discord.Forbidden:
+            await message.channel.send(
+                f"{message.author.mention} I can't DM you. Enable DMs and try again."
+            )
     if results:
         await output_channel.send(
             f"Recorded the following Transactions from {message.author.mention}:\n" +
