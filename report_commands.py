@@ -134,6 +134,7 @@ class ReportCommands(commands.Cog):
                        + "\n".join(f"{r['item_name']} - {r['donation_value']}" for r in rows)
                        + "```")
         
+        await interaction.followup.send("Command processed.")
         await output_channel.send(message)
         
 
