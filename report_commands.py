@@ -251,9 +251,10 @@ class ReportCommands(commands.Cog):
         
         if is_admin: #add the admin only commands here
             message.append("""
-        ~qty item                - adjust the current inventory of an item
-        $value item              - set the donation value of an item, can be decimal
-        <qty item                - set the guild needed amount of an item"""
+        ~qty item                - adjust the current inventory of this item
+        $value item              - set the donation value of this item, can be decimal
+        <qty item                - set the guild needed amount of this item
+        % item                   - toggle this item to show or not in /inventory report"""
             )
         # everyone sees this bit
         message.append("""
@@ -286,14 +287,7 @@ class ReportCommands(commands.Cog):
         content = ("\n".join(message))
         await interaction.response.send_message(content, ephemeral=True)
 
-        # +qty item
-        # -qty item 
-        # these are members commands
-
-        # ~qty item - this sets the inventory to a definite value 
-        # $value item - this sets the donation value of an item, it can be decimal. 
-        # <qty item - this sets the "we want this many of this item"
-
+    
     @app_commands.command(name="inventory", description="View inventory report")
     async def inventory_report(self, interaction: discord.Interaction):
         server_id = interaction.guild.id
@@ -302,6 +296,7 @@ class ReportCommands(commands.Cog):
             SELECT item_name, quantity
             FROM inventory
             WHERE server_id = $1
+            AND show_in_report = TRUE
             ORDER BY item_name
         """,server_id)
         

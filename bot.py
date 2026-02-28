@@ -25,7 +25,7 @@ ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern_qty = re.compile(r"^([<+\-$~])\s*(\d+)\s+(.+)$")
+line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+)\s+(.+)$")
 
 async def fetch_all_items():
     offset = 0
@@ -240,7 +240,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     server_id = message.guild.id
     user_id = message.author.id
     now = datetime.now(timezone.utc)
-
+    
     # -----------------------------
     # + and - (atomic inventory update)
     # -----------------------------
@@ -341,6 +341,18 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
             DO UPDATE SET required_quantity = EXCLUDED.required_quantity
         """, server_id, item_name, qty)
 
+    # -----------------------------
+    # % (set to show in inventory)
+    # -----------------------------
+    elif symbol == "%":
+        await conn.execute("""
+            INSERT INTO inventory (server_id, item_name, show_in_report)
+        VALUES ($1, $2, TRUE)
+        ON CONFLICT (server_id, item_name)
+        DO UPDATE
+        SET show_in_report = NOT COALESCE(inventory.show_in_report, FALSE)
+        """, server_id, item_name)
+
 #Discord Operations requiring @bot
 bot = Bot()
 
@@ -384,7 +396,7 @@ async def on_message(message: discord.Message):
 
                 symbol, qty, item_text = parsed
                 
-                if symbol in ("~", "$", "<"):
+                if symbol in ("~", "$", "<", "%"):
                     if not message.author.guild_permissions.administrator:
                         failed.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
                         continue
@@ -403,6 +415,12 @@ async def on_message(message: discord.Message):
                             results.append(f"Set donation value of **{guess}** to {qty}")
                         elif symbol == "<":
                             results.append(f"Set required quantity of **{guess}** to {qty}")
+                        elif symbol == "%":
+                            if qty:
+                                visible = "show in inventory report"
+                            else:
+                                visible = "not show in inventory report"
+                            results.append(f"Set **{guess}** to {visible}")
                         await handle_db(symbol, qty, guess, message, conn)
                         did_modify = True
                     else:
