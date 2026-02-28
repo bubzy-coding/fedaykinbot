@@ -521,6 +521,7 @@ async def set_donation_ichannel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
+    server_id = interaction.guild.id
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
             "You must be an admin to use this.",
@@ -538,8 +539,8 @@ async def set_donation_ichannel(
             interaction.guild.id,
             channel.id
         )
-    
-    bot.bot_settings["input"] = channel.id
+    settings = bot.bot_settings.setdefault(server_id, {})
+    settings["input"] = channel.id
     
     await interaction.response.send_message(
         f"Donation input channel set to {channel.mention}",
@@ -552,6 +553,7 @@ async def set_donation_ochannel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
 ):
+    server_id = interaction.guild.id
     if not interaction.user.guild_permissions.administrator:
         await interaction.response.send_message(
             "You must be an admin to use this.",
@@ -570,7 +572,8 @@ async def set_donation_ochannel(
             channel.id
         )
 
-    bot.bot_settings["output"] = channel.id
+    settings = bot.bot_settings.setdefault(server_id, {})
+    settings["output"] = channel.id
     await interaction.response.send_message(
         f"Donation output channel set to {channel.mention}",
         ephemeral=True
