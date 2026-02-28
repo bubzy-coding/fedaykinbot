@@ -182,7 +182,7 @@ class ReportCommands(commands.Cog):
                 username = str(user_id)
             lines.append(f"{username} donated: {r['total_quantity']} of {r['item']}")
 
-        await interaction.response.send_message("\n".join(lines))
+        await interaction.response.send_message("\n".join(lines),ephemeral=True)
 
     @app_commands.command(name="report_user_file", description="View donation report")
     @app_commands.checks.has_permissions(administrator=True)
@@ -242,6 +242,57 @@ class ReportCommands(commands.Cog):
             "Here is your donation report export:",
             file=file
         )
+    
+    @app_commands.command(name="help", description="View donation report")
+    async def help(self, interaction: discord.Interaction):
+        is_admin = interaction.user.guild_permissions.administrator
+        message = []
+        message.append("Commands " + "```")
+        
+        if is_admin: #add the admin only commands here
+            message.append("""Admin:
+            ~qty item                - adjust the current inventory of an item
+            $value item              - set the donation value of an item, can be decimal
+            <qty item                - set the guild needed amount of an item"""
+            )
+        # everyone sees this bit
+        message.append("""
+        +qty item - donate qty of an item
+        -qty item - withdraw qty of an item
+        Examples:
+        +20 Iron Ingot - add 20 Iron Ingots to the inventory
+        -10 Plastanium Ingot - remove 10 Plastanium Ingots from the inventory"""
+                       )
+        if is_admin:
+            message.append("""
+            slash commands:  
+            /sync_items              - gets the latest item list from duneawakening.wiki (use sparingly)
+            /report_user_file        - gives a detailed user report (can enter start and end dates)
+            /report_inventory        - outputs an inventory report (selected items)
+            /report_inventory_file   - outputs a full inventory report to a file"""
+            )
+
+        message.append("""       
+        /help                    - erm. you just typed this....
+        /report_user             - a view of users donations!
+        /show_required           - show guilds currently required items
+        /show_donation_values    - show how much each donated item is worth
+        ```            
+        Note:
+            The bot uses a fuzzy matching function to try and match your item, if you are close
+            You will get a DM telling you what it has guessed and you can reenter your transaction
+            Any items that do not match will not be added or removed from the inventory"""
+        )
+        content = ("\n".join(message))
+        await interaction.response.send_message(content, ephemeral=True)
+
+        # +qty item
+        # -qty item 
+        # these are members commands
+
+        # ~qty item - this sets the inventory to a definite value 
+        # $value item - this sets the donation value of an item, it can be decimal. 
+        # <qty item - this sets the "we want this many of this item"
 
     @app_commands.command(name="inventory", description="View inventory report")
     async def inventory_report(self, interaction: discord.Interaction):
