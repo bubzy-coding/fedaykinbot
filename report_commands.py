@@ -251,9 +251,9 @@ class ReportCommands(commands.Cog):
         
         if is_admin: #add the admin only commands here
             message.append("""Admin:
-            ~qty item                - adjust the current inventory of an item
-            $value item              - set the donation value of an item, can be decimal
-            <qty item                - set the guild needed amount of an item"""
+        ~qty item                - adjust the current inventory of an item
+        $value item              - set the donation value of an item, can be decimal
+        <qty item                - set the guild needed amount of an item"""
             )
         # everyone sees this bit
         message.append("""
@@ -265,11 +265,11 @@ class ReportCommands(commands.Cog):
                        )
         if is_admin:
             message.append("""
-            slash commands:  
-            /sync_items              - gets the latest item list from duneawakening.wiki (use sparingly)
-            /report_user_file        - gives a detailed user report (can enter start and end dates)
-            /report_inventory        - outputs an inventory report (selected items)
-            /report_inventory_file   - outputs a full inventory report to a file"""
+        slash commands:  
+        /sync_items              - gets the latest item list from duneawakening.wiki (use sparingly)
+        /report_user_file        - gives a detailed user report (can enter start and end dates)
+        /report_inventory        - outputs an inventory report (selected items)
+        /report_inventory_file   - outputs a full inventory report to a file"""
             )
 
         message.append("""       
@@ -279,8 +279,7 @@ class ReportCommands(commands.Cog):
         /show_donation_values    - show how much each donated item is worth
         ```            
         Note:
-            The bot uses a fuzzy matching function to try and match your item, if you are close
-            You will get a DM telling you what it has guessed and you can reenter your transaction
+            The bot uses a fuzzy matching function to try and match your item, if you are close you will get a DM telling you what it has guessed and you can re-enter your transaction.
             Any items that do not match will not be added or removed from the inventory"""
         )
         content = ("\n".join(message))
