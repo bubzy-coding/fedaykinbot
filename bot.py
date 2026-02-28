@@ -26,6 +26,7 @@ pool = None
 
 # Regex and pattern match
 line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+)\s+(.+)$")
+line_pattern_toggle = re.compile(r"^%\s+(.+)$")
 
 async def fetch_all_items():
     offset = 0
@@ -64,16 +65,16 @@ async def fetch_all_items():
 def parse_line(line: str):
     line = line.strip()
 
-    # Quantity operations
     match = line_pattern_qty.match(line)
+    toggle_match = line_pattern_toggle.match(line)
+    if toggle_match:
+        return "%", 0, toggle_match.group(1).strip()
     if match:
         symbol, qty, item_text = match.groups()
         qty = int(qty)
 
         if symbol == "-":
             qty = -qty
-        if symbol == "%":
-            return symbol, 0, item_text.strip()
 
         return symbol, qty, item_text.strip()
         
