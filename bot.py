@@ -72,8 +72,12 @@ def parse_line(line: str):
 
         if symbol == "-":
             qty = -qty
+        if symbol == "%":
+            return symbol, 0, item_text.strip()
 
         return symbol, qty, item_text.strip()
+        
+            
     return None
 
 
@@ -416,11 +420,7 @@ async def on_message(message: discord.Message):
                         elif symbol == "<":
                             results.append(f"Set required quantity of **{guess}** to {qty}")
                         elif symbol == "%":
-                            if qty:
-                                visible = "show in inventory report"
-                            else:
-                                visible = "not show in inventory report"
-                            results.append(f"Set **{guess}** to {visible}")
+                            results.append(f"Toggled **{guess}** visibility in inventory report")
                         await handle_db(symbol, qty, guess, message, conn)
                         did_modify = True
                     else:
