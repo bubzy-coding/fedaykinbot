@@ -247,10 +247,10 @@ class ReportCommands(commands.Cog):
     async def help(self, interaction: discord.Interaction):
         is_admin = interaction.user.guild_permissions.administrator
         message = []
-        message.append("Commands " + "```")
+        message.append("\nCommands " + "```")
         
         if is_admin: #add the admin only commands here
-            message.append("""Admin:
+            message.append("""
         ~qty item                - adjust the current inventory of an item
         $value item              - set the donation value of an item, can be decimal
         <qty item                - set the guild needed amount of an item"""
@@ -259,9 +259,10 @@ class ReportCommands(commands.Cog):
         message.append("""
         +qty item - donate qty of an item
         -qty item - withdraw qty of an item
+                       
         Examples:
-        +20 Iron Ingot - add 20 Iron Ingots to the inventory
-        -10 Plastanium Ingot - remove 10 Plastanium Ingots from the inventory"""
+            +20 Iron Ingot - add 20 Iron Ingots to the inventory
+            -10 Plastanium Ingot - remove 10 Plastanium Ingots from the inventory"""
                        )
         if is_admin:
             message.append("""
