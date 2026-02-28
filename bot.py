@@ -538,7 +538,9 @@ async def set_donation_ichannel(
             interaction.guild.id,
             channel.id
         )
-
+    
+    bot.bot_settings["input"] = channel.id
+    
     await interaction.response.send_message(
         f"Donation input channel set to {channel.mention}",
         ephemeral=True
@@ -568,6 +570,7 @@ async def set_donation_ochannel(
             channel.id
         )
 
+    bot.bot_settings["output"] = channel.id
     await interaction.response.send_message(
         f"Donation output channel set to {channel.mention}",
         ephemeral=True
