@@ -120,7 +120,7 @@ class ReportCommands(commands.Cog):
                 AND donation_value IS NOT NULL
                 ORDER BY donation_value desc
             """, server_id)
-        settings = self.bot_settings.get(server_id)
+        settings = self.bot.bot_settings.get(server_id)
         if not settings:
             return
         output_channel = self.bot.get_channel(int(settings.get("output")))

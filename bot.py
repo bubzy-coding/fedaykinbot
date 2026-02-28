@@ -296,6 +296,10 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
                 await conn.execute("""
                     INSERT INTO inventory (server_id, item_name, quantity)
                     VALUES ($1, $2, $3)
+                    ON CONFLICT (server_id, item_name)
+                    DO UPDATE
+                    SET quantity = inventory.quantity + EXCLUDED.quantity
+                    RETURNING quantity;
                 """, server_id, item_name, qty)
 
         # Record donation/withdrawal
@@ -614,3 +618,11 @@ bot.run(TOKEN)
 #     donation_value NUMERIC(12,2),
 #     PRIMARY KEY (server_id, id)
 # )
+
+# +qty item
+# -qty item 
+# these are members commands
+
+# ~qty item - this sets the inventory to a definite value 
+# $value item - this sets the donation value of an item, it can be decimal. 
+# <qty item - this sets the "we want this many of this item"
