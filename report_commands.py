@@ -255,7 +255,10 @@ class ReportCommands(commands.Cog):
         ~qty item                - adjust the current inventory of this item
         $value item              - set the donation value of this item, can be decimal
         <qty item                - set the guild needed amount of this item
-        % item                   - toggle this item to show or not in /inventory report"""
+        % item                   - toggle this item to show or not in /inventory report
+        ? item                   - add a missing inventory item
+        * item                   - remove a previously added inventory item                           
+                           """
             )
         # everyone sees this bit
         message.append("""
