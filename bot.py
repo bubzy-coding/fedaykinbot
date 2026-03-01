@@ -27,7 +27,8 @@ pool = None
 # Regex and pattern match
 line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+)\s+(.+)$")
 line_pattern_toggle = re.compile(r"^%\s+(.+)$")
-line_pattern_add = re.compile(r"^?\s+(.+)$")
+line_pattern_add = re.compile(r"^\?\s*(.+)$")
+
 
 async def fetch_all_items():
     offset = 0
