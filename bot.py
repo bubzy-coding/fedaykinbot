@@ -93,8 +93,19 @@ async def load_items():
     global ITEMS
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT item_name
-            FROM items_new
+            SELECT *
+                FROM items_new
+                WHERE short_description <> 'TBD'
+                AND EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(item_tags) AS tag
+                    WHERE tag LIKE 'LootTier.%'
+                )
+                AND NOT EXISTS (
+                    SELECT 1
+                    FROM jsonb_array_elements_text(item_tags) AS tag
+                    WHERE tag = 'Items.Consumables.BuildableSets'
+                )
             UNION 
             SELECT item_name FROM extra_items
         """)
