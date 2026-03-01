@@ -251,6 +251,7 @@ class ReportCommands(commands.Cog):
         
         if is_admin: #add the admin only commands here
             message.append("""
+        Admin only:
         ~qty item                - adjust the current inventory of this item
         $value item              - set the donation value of this item, can be decimal
         <qty item                - set the guild needed amount of this item
@@ -258,6 +259,7 @@ class ReportCommands(commands.Cog):
             )
         # everyone sees this bit
         message.append("""
+        Commands:
         +qty item - donate qty of an item
         -qty item - withdraw qty of an item
                        
@@ -267,7 +269,7 @@ class ReportCommands(commands.Cog):
                        )
         if is_admin:
             message.append("""
-        slash commands:  
+        Admin only slash commands:  
         /sync_items              - gets the latest item list from duneawakening.wiki (use sparingly)
         /report_user_file        - gives a detailed user report (can enter start and end dates)
         /report_inventory        - outputs an inventory report (selected items)
@@ -275,13 +277,15 @@ class ReportCommands(commands.Cog):
             )
 
         message.append("""       
+        Slash commands
         /help                    - erm. you just typed this....
         /report_user             - a view of users donations!
         /show_required           - show guilds currently required items
         /show_donation_values    - show how much each donated item is worth
         ```            
         Note:
-            The bot uses a fuzzy matching function to try and match your item, if you are close you will get a DM telling you what it has guessed and you can re-enter your transaction.
+            The bot uses a fuzzy matching function to try and match your item, if you are close you will get a DM telling you what it has guessed and 
+            you can re-enter your transaction.
             Any items that do not match will not be added or removed from the inventory"""
         )
         content = ("\n".join(message))
