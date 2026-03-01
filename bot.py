@@ -386,7 +386,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
         VALUES ($1,$2,$3,NOW())
         ON CONFLICT(item_name)
         DO NOTHING
-        """,item_name,f"{item_name} added as missing", ["taaag"])
+        """,item_name,f"{item_name} added as missing", json.dumps(["Items.AddedByGuild"]))
                            
 
 
