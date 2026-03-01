@@ -427,7 +427,7 @@ async def on_message(message: discord.Message):
             for line in lines:
                 parsed = parse_line(line)
                 if not parsed:
-                    failed.append(f"`{line}` → ❌ Invalid format, use like this: `+/- {qty} {guess}`")
+                    failed.append(f"`{line}` → ❌ Invalid format, use like this: `+10 Plant Fiber`")
                     continue
 
                 symbol, qty, item_text = parsed
@@ -439,8 +439,9 @@ async def on_message(message: discord.Message):
                 if symbol == "?":
                     results.append(f"Added **{item_text}** to inventory as missing item")
                     await handle_db(symbol, 0, item_text, message, conn)
+                    ITEMS.append(item_text)
                     await load_items()          
-                    
+
                 guess = guess_item(item_text)
 
                 if guess:
