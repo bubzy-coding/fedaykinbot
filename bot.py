@@ -93,21 +93,23 @@ async def load_items():
     global ITEMS
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT item_name
-                FROM items_new
-                WHERE short_description <> 'TBD'
-                AND EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements_text(item_tags) AS tag
-                    WHERE tag LIKE 'LootTier.%'
-                )
-                AND NOT EXISTS (
-                    SELECT 1
-                    FROM jsonb_array_elements_text(item_tags) AS tag
-                    WHERE tag = 'Items.Consumables.BuildableSets'
-                )
+           SELECT item_name
+            FROM items_new
+            WHERE short_description <> 'TBD'
+            AND EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(item_tags) AS tag
+                WHERE tag LIKE 'Items.CraftedResources%'
+                OR tag LIKE 'Items.RefinedResources%'
+                OR tag LIKE 'Items.RawResources%'
+            )
+            AND NOT EXISTS (
+                SELECT 1
+                FROM jsonb_array_elements_text(item_tags) AS tag
+                WHERE tag = 'Items.Consumables.BuildableSets'
+            )
             UNION 
-            SELECT item_name FROM extra_items
+            select item_name from extra_items
         """)
         ITEMS = [row["item_name"] for row in rows]
 
@@ -432,11 +434,14 @@ async def on_message(message: discord.Message):
 
                 symbol, qty, item_text = parsed
                 
-                if symbol in ("~", "$", "<", "%"):
+                if symbol in ("~", "$", "<", "%", "?"):
                     if not message.author.guild_permissions.administrator:
                         failed.append(f"❌ You are not allowed to use admin-only operation : {symbol}")
                         continue
-
+                if symbol == "?":
+                    results.append(f"Added **{item_text}** to inventory as missing item")
+                    await handle_db(symbol, 0, item_text, message, conn)
+                    
                 guess = guess_item(item_text)
 
                 if guess:
@@ -456,9 +461,11 @@ async def on_message(message: discord.Message):
                         await handle_db(symbol, qty, guess, message, conn)
                         did_modify = True
                     else:
-                        failed.append(f"Entered `{item_text}`, this is not an item match, did you mean `{guess}`? Please resubmit `{symbol}{qty} {guess}` if this is correct")
+                        if symbol != "?":
+                            failed.append(f"Entered `{item_text}`, this is not an item match, did you mean `{guess}`? Please resubmit `{symbol}{qty} {guess}` if this is correct")
                 else:
-                    failed.append(f"{qty:+} `{item_text}` → ❌ No match")
+                    if symbol != "?":
+                        failed.append(f"{qty:+} `{item_text}` → ❌ No match")
     if did_modify:
         async with pool.acquire() as conn:
             await bot.update_scoreboard(message, conn)
