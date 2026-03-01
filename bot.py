@@ -385,7 +385,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
         INSERT INTO extra_items (item_name, short_description, item_tags, created_at)
         VALUES ($1,$2,$3,NOW())
         """,item_name,f"{item_name} added as missing", json.dumps(["Items.AddedByGuild"]))
-                           
+        await load_items()                           
 
 
 
