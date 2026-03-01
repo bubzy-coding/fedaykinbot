@@ -441,7 +441,7 @@ async def on_message(message: discord.Message):
                     results.append(f"Added **{item_text}** to inventory as missing item")
                     await handle_db(symbol, 0, item_text, message, conn)
                     ITEMS.append(item_text)
-                    await load_items()          
+                    print(ITEMS)     
 
                 guess = guess_item(item_text)
 
