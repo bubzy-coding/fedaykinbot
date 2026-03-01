@@ -90,6 +90,8 @@ async def load_items():
         rows = await conn.fetch("""
             SELECT item_name
             FROM items_new
+            UNION 
+            SELECT item_name FROM extra_items
         """)
         ITEMS = [row["item_name"] for row in rows]
 
