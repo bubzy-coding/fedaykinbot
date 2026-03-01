@@ -93,7 +93,7 @@ async def load_items():
     global ITEMS
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-            SELECT *
+            SELECT item_name
                 FROM items_new
                 WHERE short_description <> 'TBD'
                 AND EXISTS (
