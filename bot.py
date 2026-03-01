@@ -27,6 +27,7 @@ pool = None
 # Regex and pattern match
 line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+)\s+(.+)$")
 line_pattern_toggle = re.compile(r"^%\s+(.+)$")
+line_pattern_add = re.compile(r"^?\s+(.+)$")
 
 async def fetch_all_items():
     offset = 0
@@ -67,8 +68,11 @@ def parse_line(line: str):
 
     match = line_pattern_qty.match(line)
     toggle_match = line_pattern_toggle.match(line)
+    add_item = line_pattern_add.match(line)
     if toggle_match:
         return "%", 0, toggle_match.group(1).strip()
+    if add_item:
+        return "?", 0, add_item.group(1).strip()
     if match:
         symbol, qty, item_text = match.groups()
         qty = int(qty)
@@ -359,6 +363,19 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
         DO UPDATE
         SET show_in_report = NOT COALESCE(inventory.show_in_report, FALSE)
         """, server_id, item_name)
+    # -----------------------------
+    # Add Missing Items
+    # -----------------------------
+    elif symbol == "?":
+        await conn.execute("""
+        INSERT INTO extra_items (item_name, short_description, item_tags, created_at)
+        VALUES ($1,$2,$3,NOW())
+        ON CONFLICT(item_name)
+        DO NOTHING
+        """,item_name,f"{item_name} added as missing", ["taaag"])
+                           
+
+
 
 #Discord Operations requiring @bot
 bot = Bot()
@@ -398,7 +415,7 @@ async def on_message(message: discord.Message):
             for line in lines:
                 parsed = parse_line(line)
                 if not parsed:
-                    failed.append(f"`{line}` → ❌ Invalid format, use like this: `+90 Iron Ingot`")
+                    failed.append(f"`{line}` → ❌ Invalid format, use like this: `{symbol}{qty} {guess}`")
                     continue
 
                 symbol, qty, item_text = parsed
