@@ -13,7 +13,7 @@ class ReportCommands(commands.Cog):
     def parse_date(self, date_str: str):
         return datetime.strptime(date_str, "%Y-%m-%d")
     
-    async def send_long_slash_response(self, einteraction, content):
+    async def send_long_slash_response(self, interaction, content):
         chunks = []
         limit = 2000
 
@@ -37,18 +37,22 @@ class ReportCommands(commands.Cog):
             await interaction.followup.send(chunk)
     
     def chunk_text(self, text, limit=2000):
+        wrapper_overhead = 8  # ```\n + \n```
+        usable = limit - wrapper_overhead
         chunks = []
+
         while text:
-            if len(text) <= limit:
-                chunks.append(text)
-                break
+            if len(text) <= usable:
+                chunk = text
+                text = ""
+            else:
+                split_at = text.rfind("\n", 0, usable)
+                if split_at == -1:
+                    split_at = usable
+                chunk = text[:split_at]
+                text = text[split_at:].lstrip()
 
-            split_at = text.rfind("\n", 0, limit)
-            if split_at == -1:
-                split_at = limit
-
-            chunks.append(text[:split_at])
-            text = text[split_at:].lstrip()
+            chunks.append(f"```\n{chunk}\n```")
 
         return chunks
     
@@ -169,9 +173,9 @@ class ReportCommands(commands.Cog):
         if not rows:
             message=f"No donation values configured" 
         else: 
-            message = (f"Item donation values set as follows:\n" + "```"
+            message = (f"Item donation values set as follows:\n" 
                        + "\n".join(f"{r['item_name']} - {r['donation_value']}" for r in rows)
-                       + "```")
+                       )
         
         await interaction.followup.send("Command processed.")
         for chunk in self.chunk_text(message):
