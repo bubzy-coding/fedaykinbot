@@ -274,7 +274,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     server_id = message.guild.id
     user_id = message.author.id
     now = datetime.now(timezone.utc)
-    logging.info("DEBUG LOGGING %s %s %r", qty, type(qty), qty)
+    
     # -----------------------------
     # + and - (atomic inventory update)
     # -----------------------------
@@ -358,7 +358,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     # -----------------------------
     
     elif symbol == "$":
-        logging.info("DEBUG LOGGING IN THE DAMNED INSERT %s %s %r", qty, type(qty), qty)
+        
         await conn.execute("""
             INSERT INTO donation_values (server_id, item_name, donation_value)
             VALUES ($1, $2, NULLIF($3, 0::numeric))
