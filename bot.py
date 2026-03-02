@@ -274,7 +274,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     server_id = message.guild.id
     user_id = message.author.id
     now = datetime.now(timezone.utc)
-    
+    logging.info("DEBUG LOGGING %s %s %r", qty, type(qty), qty)
     # -----------------------------
     # + and - (atomic inventory update)
     # -----------------------------
