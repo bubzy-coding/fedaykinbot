@@ -26,7 +26,7 @@ ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+(?:\.\d+)?)\s+(.+)$")
+line_pattern_qty = re.compile(r"^([%<+\-~])\s*(\d+)\s+(.+)$")
 line_pattern_value = re.compile(r"^(\$)\s*(\d+(?:\.\d+)?)\s+(.+)$")
 line_pattern_toggle = re.compile(r"^%\s+(.+)$")
 line_pattern_add = re.compile(r"^\?\s*(.+)$")

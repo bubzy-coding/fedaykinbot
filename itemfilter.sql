@@ -1,19 +1,7 @@
-SELECT *
-FROM items_new
-WHERE short_description <> 'TBD'
-AND EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements_text(item_tags) AS tag
-    WHERE tag LIKE 'Items.CraftedResources%'
-    OR tag LIKE 'Items.RefinedResources%'
-    OR tag LIKE 'Items.RawResources%'
-)
-AND NOT EXISTS (
-    SELECT 1
-    FROM jsonb_array_elements_text(item_tags) AS tag
-    WHERE tag = 'Items.Consumables.BuildableSets'
-)
-UNION 
 
+-- select * from donation_values where 
+--  server_id <> 1466549361432461436
 
-select * from donation_values where item_name like 'Plasteel%'
+INSERT INTO donation_values (server_id, item_name, donation_value)
+VALUES (1, 'test', 1.4);
+select * from donation_values where item_name = 'test'
