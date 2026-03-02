@@ -1,2 +1,1 @@
-ALTER TABLE donation_values
-ALTER COLUMN donation_value TYPE numeric(12,3);
+select * from donation_values where donation_value <1

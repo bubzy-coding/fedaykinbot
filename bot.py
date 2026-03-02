@@ -150,7 +150,7 @@ class Bot(commands.Bot):
 
     async def setup_hook(self):
         global pool
-        pool = await asyncpg.create_pool(DATABASE_URL)
+        pool = await asyncpg.create_pool(DATABASE_URL,statement_cache_size=0)
         bot.pool = pool
         await load_items()
         await self.load_extension("report_commands")
