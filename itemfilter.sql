@@ -16,3 +16,4 @@ AND NOT EXISTS (
 UNION 
 
 
+select * from donation_values where item_name like 'Plasteel%'

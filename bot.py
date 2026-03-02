@@ -9,6 +9,7 @@ import re
 from datetime import datetime, timezone, timedelta
 import aiohttp
 import logging
+from decimal import Decimal
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ def parse_line(line: str):
         return "?", 0, add_item.group(1).strip()
     if value_match:
         symbol, qty, item_text = value_match.groups()
-        return symbol, float(qty), item_text.strip()
+        return symbol, Decimal(qty), item_text.strip()
 
     if match:
         symbol, qty, item_text = match.groups()
