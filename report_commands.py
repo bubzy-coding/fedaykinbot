@@ -174,7 +174,7 @@ class ReportCommands(commands.Cog):
                        + "```")
         
         await interaction.followup.send("Command processed.")
-        for chunk in self.app_commandchunk_text(message):
+        for chunk in self.chunk_text(message):
             await output_channel.send(chunk)
 
     @app_commands.command(name="report_user", description="View donation report")
