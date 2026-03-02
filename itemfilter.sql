@@ -14,4 +14,5 @@ AND NOT EXISTS (
     WHERE tag = 'Items.Consumables.BuildableSets'
 )
 UNION 
-select * from extra_items
+
+

@@ -25,7 +25,8 @@ ITEMS = []
 pool = None
 
 # Regex and pattern match
-line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+)\s+(.+)$")
+line_pattern_qty = re.compile(r"^([%<+\-$~])\s*(\d+(?:\.\d+)?)\s+(.+)$")
+line_pattern_value = re.compile(r"^(\$)\s*(\d+(?:\.\d+)?)\s+(.+)$")
 line_pattern_toggle = re.compile(r"^%\s+(.+)$")
 line_pattern_add = re.compile(r"^\?\s*(.+)$")
 
@@ -70,12 +71,19 @@ def parse_line(line: str):
     match = line_pattern_qty.match(line)
     toggle_match = line_pattern_toggle.match(line)
     add_item = line_pattern_add.match(line)
+    value_match = line_pattern_value.match(line)
+
     if toggle_match:
         return "%", 0, toggle_match.group(1).strip()
     if add_item:
         return "?", 0, add_item.group(1).strip()
+    if value_match:
+        symbol, qty, item_text = value_match.groups()
+        return symbol, float(qty), item_text.strip()
+
     if match:
         symbol, qty, item_text = match.groups()
+        
         qty = int(qty)
 
         if symbol == "-":
