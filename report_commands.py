@@ -13,6 +13,45 @@ class ReportCommands(commands.Cog):
     def parse_date(self, date_str: str):
         return datetime.strptime(date_str, "%Y-%m-%d")
     
+    async def send_long_slash_response(interaction, content):
+        chunks = []
+        limit = 2000
+
+        while content:
+            if len(content) <= limit:
+                chunks.append(content)
+                break
+
+            split_at = content.rfind("\n", 0, limit)
+            if split_at == -1:
+                split_at = limit
+
+            chunks.append(content[:split_at])
+            content = content[split_at:].lstrip()
+
+        # First message
+        await interaction.response.send_message(chunks[0])
+
+        # Remaining messages
+        for chunk in chunks[1:]:
+            await interaction.followup.send(chunk)
+    
+    def chunk_text(text, limit=2000):
+        chunks = []
+        while text:
+            if len(text) <= limit:
+                chunks.append(text)
+                break
+
+            split_at = text.rfind("\n", 0, limit)
+            if split_at == -1:
+                split_at = limit
+
+            chunks.append(text[:split_at])
+            text = text[split_at:].lstrip()
+
+        return chunks
+    
     @app_commands.command(name="show_required", description="Show required items vs current stock")
     async def show_required(self, interaction: discord.Interaction):
 
@@ -135,8 +174,8 @@ class ReportCommands(commands.Cog):
                        + "```")
         
         await interaction.followup.send("Command processed.")
-        await output_channel.send(message)
-        
+        for chunk in self.app_commandchunk_text(message):
+            await output_channel.send(chunk)
 
     @app_commands.command(name="report_user", description="View donation report")
     async def report_user(self, interaction: discord.Interaction, start_date: str = None, end_date: str = None):
