@@ -356,7 +356,9 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     # -----------------------------
     # $ (set donation value)
     # -----------------------------
+    
     elif symbol == "$":
+        logging.info("DEBUG LOGGING IN THE DAMNED INSERT %s %s %r", qty, type(qty), qty)
         await conn.execute("""
             INSERT INTO donation_values (server_id, item_name, donation_value)
             VALUES ($1, $2, NULLIF($3, 0))
