@@ -365,7 +365,14 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
             ON CONFLICT (server_id, item_name)
             DO UPDATE SET donation_value = NULLIF(EXCLUDED.donation_value, 0);
         """, server_id, item_name, qty)
+        row = await conn.fetchrow("""
+        SELECT donation_value
+        FROM donation_values
+        WHERE server_id = $1
+        AND item_name = $2
+    """, server_id, item_name)
 
+        logging.info("AFTER WRITE: %r", row["donation_value"])
     # -----------------------------
     # < (set required quantity)
     # -----------------------------
