@@ -13,7 +13,7 @@ class ReportCommands(commands.Cog):
     def parse_date(self, date_str: str):
         return datetime.strptime(date_str, "%Y-%m-%d")
     
-    async def send_long_slash_response(interaction, content):
+    async def send_long_slash_response(self, einteraction, content):
         chunks = []
         limit = 2000
 
@@ -36,7 +36,7 @@ class ReportCommands(commands.Cog):
         for chunk in chunks[1:]:
             await interaction.followup.send(chunk)
     
-    def chunk_text(text, limit=2000):
+    def chunk_text(self, text, limit=2000):
         chunks = []
         while text:
             if len(text) <= limit:
