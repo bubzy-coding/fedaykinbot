@@ -854,13 +854,13 @@ DAILY_AMOUNT   = 200
 
 # Payout multipliers (applied to bet amount)
 PAYOUTS = {
-    "7️⃣": 20,
-    "💎": 15,
-    "🎰": 10,
-    "🍇": 6,
-    "🍊": 4,
-    "🍋": 3,
-    "🍒": 2,
+    "7️⃣": 200,
+    "💎": 150,
+    "🎰": 100,
+    "🍇": 60,
+    "🍊": 40,
+    "🍋": 30,
+    "🍒": 20,
 }
 # Two-of-a-kind pays 0.5× bet (net: −0.5 × bet)
 TWO_MATCH_MULTIPLIER = 0.5
@@ -957,6 +957,8 @@ def calculate_payout(reels: list[str], bet: int) -> tuple[int, str]:
     
 )
 async def cmd_balance(interaction: discord.Interaction):
+    await interaction.response.defer()
+    output_channel = bot.get_channel(int(bot.settings.get("gambling_channel")))
     await ensure_balance_table()
     coins = await get_balance(interaction.user.id, interaction.guild_id)
     embed = discord.Embed(
@@ -964,7 +966,8 @@ async def cmd_balance(interaction: discord.Interaction):
         description=f"{interaction.user.display_name} has **{coins:,}** coins.",
         color=discord.Color.gold()
     )
-    await interaction.response.send_message(embed=embed)
+    await output_channel.send(embed=embed)
+#    await interaction.response.send_message(embed=embed)
 
 
 # ── /daily ─────────────────────────────────────────────────────────────────────
@@ -975,6 +978,8 @@ async def cmd_balance(interaction: discord.Interaction):
     
 )
 async def cmd_daily(interaction: discord.Interaction):
+    await interaction.response.defer()
+    output_channel = bot.get_channel(int(bot.settings.get("gambling_channel")))
     await ensure_balance_table()
     async with bot.pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -993,7 +998,7 @@ async def cmd_daily(interaction: discord.Interaction):
                     description=f"Come back in **{hours}h {minutes}m**.",
                     color=discord.Color.red()
                 )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+                await output_channel.send(embed=embed, ephemeral=True)
                 return
 
         await conn.execute("""
@@ -1010,7 +1015,7 @@ async def cmd_daily(interaction: discord.Interaction):
         description=f"You claimed **{DAILY_AMOUNT:,}** coins!\nNew balance: **{coins:,}** coins.",
         color=discord.Color.green()
     )
-    await interaction.response.send_message(embed=embed)
+    await output_channel.send(embed=embed)
 
 
 # ── /slots ─────────────────────────────────────────────────────────────────────
@@ -1020,16 +1025,16 @@ async def cmd_daily(interaction: discord.Interaction):
     description="Spin the slot machine and gamble your coins"
     
 )
-@app_commands.describe(amount="Number of coins to bet (minimum 10) and number of spins (default 1)")
+@app_commands.describe(amount="Number of coins to bet (minimum 20) and number of spins (default 1)")
 async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 1):
+    await interaction.response.defer()
     await ensure_balance_table()
-
-    if amount < 10:
-        await interaction.response.send_message(
-            "Minimum bet is **10** coins.", ephemeral=True
+    output_channel = bot.get_channel(int(bot.settings.get("gambling_channel")))
+    if amount < 20:
+        await interaction.followup.send(
+            "Minimum bet is **20** coins.", ephemeral=True
         )
         return
-    responded = False
     for spin in range(spins):
         coins = await get_balance(interaction.user.id, interaction.guild_id)
         if amount > coins:
@@ -1038,11 +1043,8 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
                 description=f"You only have **{coins:,}** coins.",
                 color=discord.Color.red()
             )
-            if not responded:
-                await interaction.response.send_message(embed=embed, ephemeral=True)
-                responded = True
-            else:
-                await interaction.followup.send(embed=embed, ephemeral=True)
+            
+            await interaction.followup.send(embed=embed, ephemeral=True)
             return
 
         reels = spin_reels()
@@ -1079,11 +1081,8 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
         embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
         embed.set_footer(text=f"Bet: {amount:,} coins")
 
-        if not responded:
-            await interaction.response.send_message(embed=embed)
-            responded = True
-        else:
-            await interaction.followup.send(embed=embed)
+
+        await output_channel.send(embed=embed)
 
 
 
