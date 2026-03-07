@@ -908,8 +908,8 @@ async def get_balance(user_id: int, server_id: int) -> int:
 async def update_balance(user_id: int, server_id: int, delta: int):
     async with bot.pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO donations (user_id, server_id, item, quantity)
-            VALUES ($1, $2, 'Gambling Token', $3)            
+            INSERT INTO donations (user_id, server_id, item, quantity,date,is_adjustment)
+            VALUES ($1, $2, 'Gambling Token', $3,NOW(),FALSE)            
         """, user_id, server_id, delta)
 
 async def get_jackpot(server_id:int):

@@ -13,4 +13,8 @@ values(
 on CONFLICT (server_id)
 do update set gambling_channel = 1479875157592899655
 ;
-select * from bot_settings
+select * from bot_settings;
+
+
+select * from donations
+where donation_date is null
