@@ -124,7 +124,7 @@ async def load_items():
     global ITEMS
     async with pool.acquire() as conn:
         rows = await conn.fetch("""
-           SELECT item_name
+           SELECT LOWER(item_name)
             FROM items_new
             WHERE short_description <> 'TBD'
             AND EXISTS (
@@ -606,7 +606,7 @@ async def on_message(message: discord.Message):
                     ITEMS.append(item_text)
                     print(ITEMS)     
 
-                guess = guess_item(item_text)
+                guess = guess_item(item_text.lower())
 
                 if guess:
                     if guess.lower():# == item_text.lower():
