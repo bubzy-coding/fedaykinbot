@@ -1131,12 +1131,13 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
     
     embed.add_field(name="Spins", value=str(spins), inline=False)
     embed.add_field(name="Wins", value=str(wins), inline=False)
-    embed.add_field(name="Losses", value=str(losses), inline=False)
+    embed.add_field(name="Losses", value=str(losses), inline=True)
     embed.add_field(name="Two of a kind", value=str(two_oak), inline=False)
     embed.add_field(name="Minor Jackpot", value=str(minor_jp), inline=False)
     embed.add_field(name="Jackpot", value=str(jackpot), inline=False)
     embed.add_field(name="Total Bet", value=total_bet, inline=True)
-    embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
+    embed.add_field(name="Bet Outcome", value=total_bet, inline=True)
+    embed.add_field(name="Account Balance", value=f"{new_balance:,} coins", inline=False)
     
     
     await output_channel.send(embed=embed)
