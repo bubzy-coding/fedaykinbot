@@ -958,7 +958,7 @@ def calculate_payout(reels: list[str], bet: int) -> tuple[int, str]:
 )
 async def cmd_balance(interaction: discord.Interaction):
     await interaction.response.defer()
-    output_channel = bot.get_channel(int(bot.settings.get("gambling_channel")))
+    output_channel = bot.get_channel(int(bot.bot_settings.get("gambling_channel")))
     await ensure_balance_table()
     coins = await get_balance(interaction.user.id, interaction.guild_id)
     embed = discord.Embed(
@@ -979,7 +979,7 @@ async def cmd_balance(interaction: discord.Interaction):
 )
 async def cmd_daily(interaction: discord.Interaction):
     await interaction.response.defer()
-    output_channel = bot.get_channel(int(bot.settings.get("gambling_channel")))
+    output_channel = bot.get_channel(int(bot.bot_settings.get("gambling_channel")))
     await ensure_balance_table()
     async with bot.pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -1029,7 +1029,7 @@ async def cmd_daily(interaction: discord.Interaction):
 async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 1):
     await interaction.response.defer()
     await ensure_balance_table()
-    output_channel = bot.get_channel(int(bot.settings.get("gambling_channel")))
+    output_channel = bot.get_channel(int(bot.bot_settings.get("gambling_channel")))
     if amount < 20:
         await interaction.followup.send(
             "Minimum bet is **20** coins.", ephemeral=True
