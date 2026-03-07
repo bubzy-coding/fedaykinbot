@@ -10,10 +10,31 @@ from datetime import datetime, timezone, timedelta
 import aiohttp
 import logging
 from decimal import Decimal
+from PIL import Image, ImageDraw, ImageFont
+from pilmoji import Pilmoji
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+scores = []
+background_col = (32, 34, 37)
+text_frame_col = (132, 134, 137)
+text_col = (47, 49, 54)
+orange_col = (255,133,27)
+font_height = 35
+img = Image.new("RGB", (698, 873), background_col)
+draw = ImageDraw.Draw(img)
+font =ImageFont.truetype('Dune_Rise.ttf',font_height)
+bold_font =ImageFont.truetype('Dune_Rise.ttf',font_height)
+emoji_font = ImageFont.truetype('NotoColorEmoji-Regular.ttf', 109)
+draw.rectangle((0, 0, 698, 50), fill=(47, 49, 54))
+image_offset = 20
+
+text_index = 0
+previous_ypos = 1
+
+top_margin = 100   # space for header
+row_height = 60
 
 TOKEN = os.environ["DISCORD_TOKEN"]
 DATABASE_URL = os.environ["DATABASE_URL"]
@@ -171,7 +192,7 @@ class Bot(commands.Bot):
             }
             logging.info("Loaded bot_settings:", self.bot_settings)
 
-    async def update_scoreboard(self, ctx, conn):
+    async def aupdate_scoreboard(self, ctx, conn):
         guild = ctx.guild
         if guild is None:
             return
@@ -268,6 +289,147 @@ class Bot(commands.Bot):
                     WHERE server_id = $2
                 """, message.id, server_id)
                 self.bot_settings[server_id]["scoreboard_message"] = message.id
+
+async def update_scoreboard(self, ctx, conn):
+        guild = ctx.guild
+        if guild is None:
+            return
+        server_id = guild.id
+
+        # --- Calculate start of current Tuesday ---
+        now = datetime.now(timezone.utc)
+        days_since_tuesday = (now.weekday() - 1) % 7
+        period_start = (now - timedelta(days=days_since_tuesday)).replace(
+            hour=0, minute=0, second=0, microsecond=0
+        )
+
+        # --- Get totals ---
+    
+        rows = await conn.fetch("""
+            SELECT d.user_id,
+                SUM(d.quantity * i.donation_value) AS total_value
+                FROM donations d
+                JOIN donation_values i ON d.item = i.item_name
+                WHERE d.server_id = $1
+                    AND d.donation_date >= $2
+                    AND NOT d.is_adjustment
+                    AND i.server_id = $3
+                GROUP BY d.user_id
+                ORDER BY total_value DESC;
+        """, server_id, period_start, server_id)
+
+        # --- Build content ---
+        if not rows:
+            content = "🏆 **Weekly Scoreboard (since Tuesday)**\n\nNo donations yet."
+        else:
+            draw.rounded_rectangle((0, 0, 700, top_margin-20), radius=10,fill=orange_col)
+            top_text = 'Donation Leaderboard'
+            top_text_length = bold_font.getlength(top_text) +10
+            draw.text((700-top_text_length, 30),'Donation Leaderboard',fill=text_col,font=bold_font)
+
+
+            score_offset = 15
+            for index, item in enumerate(scores):
+                name = guild.get_member(item["user_id"]).display_name
+                score = item["total_value"]
+                
+                y = top_margin + index * row_height  # row height
+
+                # left accent block
+                draw.rounded_rectangle((0, y, 50, y + row_height-score_offset), radius=10,fill=background_col)
+                
+                #name and score background
+                draw.rounded_rectangle((110, y, 700, y + row_height-score_offset), radius=10,fill=text_frame_col)
+
+                text_y = y+(row_height-font_height-(score_offset/2))/2
+                score_text = f"{float(score):.3f}"
+                score_width = font.getlength(score_text)
+                score_x = img.width - score_width 
+                print(y+row_height-score_offset)
+                print(text_y)
+                # text
+                draw.text(
+                    (10, text_y),
+                    str(index+1),
+                    fill=(222, 225, 220),
+                    font=font
+                )
+                if index==0:
+                    with Pilmoji(img) as pilmoji:
+                        pilmoji.text((60, y), '🏅', font=emoji_font, embedded_color=True, emoji_scale_factor=0.4)
+                    draw.text((120, text_y), name, font=font, fill=text_col)
+                elif index==1:
+                    with Pilmoji(img) as pilmoji:
+                        pilmoji.text((60, y ), '🥈', font=emoji_font, embedded_color=True, emoji_scale_factor=0.4)
+                    draw.text((120, text_y), name, font=font, fill=text_col)
+                elif index==2:
+                    with Pilmoji(img) as pilmoji:
+                        pilmoji.text((60, y), '🥉', font=emoji_font, embedded_color=True, emoji_scale_factor=0.4)
+                    draw.text((120, text_y), name, font=font, fill=text_col)
+                else:
+                    draw.text(
+                        (120, text_y),
+                        str(name),
+                        fill=text_col,
+                        font=font
+                    )
+                draw.text(
+                    (score_x, text_y),
+                    str(score),
+                    fill=text_col,
+                    font=font
+                )
+            img.save("leaderboard.png")
+
+            
+        # await interaction.response.send_message(embed=embed)
+            content=discord.File("leaderboard.png")
+
+
+        # --- Check for existing scoreboard message ---
+        settings = self.bot_settings.get(server_id)
+        if not settings:
+            return
+        channel_name = settings.get("scoreboard_channel")
+        message_name = settings.get("scoreboard_message")
+
+        if not channel_name:
+            # No scoreboard configured
+            logging.info("no channel_name")
+            return
+
+        channel = self.get_channel(int(channel_name))
+        if not channel:
+            logging.info("no channel")
+            return
+
+        if message_name is None:
+            # Channel set but message not created yet
+            message = await channel.send(content)
+
+
+            await conn.execute("""
+                UPDATE bot_settings
+                SET scoreboard_message = $1
+                WHERE server_id = $2
+            """, message.id, server_id)
+            self.bot_settings[server_id]["scoreboard_message"] = message.id
+        else:
+            try:
+                message = await channel.fetch_message(int(message_name))
+                await message.edit(content=content)
+            except:
+                # Message deleted manually, recreate
+                message = await channel.send(content)
+
+                await conn.execute("""
+                    UPDATE bot_settings
+                    SET scoreboard_message = $1
+                    WHERE server_id = $2
+                """, message.id, server_id)
+                self.bot_settings[server_id]["scoreboard_message"] = message.id
+
+
 
 
 async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
