@@ -1017,7 +1017,7 @@ async def cmd_daily(interaction: discord.Interaction):
                     description=f"Come back in **{hours}h {minutes}m**.",
                     color=discord.Color.red()
                 )
-                await output_channel.send(embed=embed)
+                await interaction.followup.send(embed=embed, ephemeral=True)
                 return
 
         await conn.execute("""
