@@ -1096,23 +1096,26 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
         if winnings == 0:
             color = discord.Color.red()
             outcome = f"-{amount:,} coins"
+            finout = -amount
             losses =1
             wins = 0
         elif winnings < amount:
             color = discord.Color.orange()
             outcome = f"-{amount - winnings:,} coins"
+            finout = amount - winnings
             wins = 1
             losses = 0
         else:
             color = discord.Color.green()
             outcome = f"+{net:,} coins"
+            finout = net
             wins = 1
             losses = 0
 
         if result_text == "won_jackpot":
             result_text = "You won the whole pot!!!"
         
-        message_out.append({"spins":spin, "winnings":outcome, "results":result_text, "reeldisplay":reel_display,"wins":wins, "losses":losses})
+        message_out.append({"spins":spin, "winnings":finout, "results":result_text, "reeldisplay":reel_display,"wins":wins, "losses":losses})
 
     total_bet = spins * amount
     wins = sum(entry["wins"] for entry in message_out)
