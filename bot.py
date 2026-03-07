@@ -326,7 +326,7 @@ class Bot(commands.Bot):
         else:
             draw.rounded_rectangle((0, 0, 700, top_margin-20), radius=10,fill=orange_col)
             top_text = 'Donation Leaderboard'
-            top_text_length = bold_font.getlength(top_text) +10
+            top_text_length = bold_font.getlength(top_text) +20
             draw.text((700-top_text_length, 30),'Donation Leaderboard',fill=text_col,font=bold_font)
 
 
@@ -344,7 +344,7 @@ class Bot(commands.Bot):
                 draw.rounded_rectangle((110, y, 700, y + row_height-score_offset), radius=10,fill=text_frame_col)
 
                 text_y = y+(row_height-font_height-(score_offset/2))/2
-                score_text = f"{float(score):.3f}"
+                score_text = f"{int(score)}"
                 score_width = font.getlength(score_text)
                 score_x = img.width - score_width 
                 print(y+row_height-score_offset)
