@@ -974,6 +974,7 @@ async def cmd_balance(interaction: discord.Interaction):
         description=f"{interaction.user.display_name} has **{coins:,}** coins.",
         color=discord.Color.gold()
     )
+    await interaction.delete_original_response()
     await output_channel.send(embed=embed)
 #    await interaction.response.send_message(embed=embed)
 
@@ -1031,6 +1032,7 @@ async def cmd_daily(interaction: discord.Interaction):
         description=f"You claimed **{DAILY_AMOUNT:,}** coins!\nNew balance: **{coins:,}** coins.",
         color=discord.Color.green()
     )
+    await interaction.delete_original_response()
     await output_channel.send(embed=embed)
 
 
@@ -1105,7 +1107,7 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
         embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
         embed.set_footer(text=f"Bet: {amount:,} coins")
 
-
+        await interaction.delete_original_response()
         await output_channel.send(embed=embed)
 
 
