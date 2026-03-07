@@ -1109,11 +1109,7 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
         embed.add_field(name="Outcome", value=outcome, inline=True)
         embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
         embed.set_footer(text=f"Bet: {amount:,} coins")
-        async with bot.pool.acquire() as conn:
-            await bot.update_scoreboard(interaction, conn)
-
         
-
         await output_channel.send(embed=embed)
     await interaction.followup.send("Done!", ephemeral=True)
 
