@@ -812,13 +812,13 @@ async def sync_items(interaction: discord.Interaction):
             json.dumps(parsed)
         ))
 
-        async with pool.acquire() as conn:
-            await conn.execute("TRUNCATE TABLE items_new;")
-            await conn.copy_records_to_table(
-                "items_new",
-                records=records,
-                columns=["id", "item_name", "short_description", "item_tags"]
-            )
+    async with pool.acquire() as conn:
+        await conn.execute("TRUNCATE TABLE items_new;")
+        await conn.copy_records_to_table(
+            "items_new",
+            records=records,
+            columns=["id", "item_name", "short_description", "item_tags"]
+        )
 
     await interaction.followup.send(f"Fetched {len(records)} items.")
 
@@ -958,7 +958,15 @@ def calculate_payout(reels: list[str], bet: int) -> tuple[int, str]:
 )
 async def cmd_balance(interaction: discord.Interaction):
     await interaction.response.defer()
-    output_channel = bot.bot_settings.get(interaction.guild_id, {}).get("gambling_channel")
+    channel_id = bot.bot_settings.get(interaction.guild_id, {}).get("gambling_channel")
+    if not channel_id:
+        await interaction.followup.send("No gambling channel set.", ephemeral=True)
+        return
+    output_channel = bot.get_channel(int(channel_id))
+    if not output_channel:
+        await interaction.followup.send("Gambling channel not found.", ephemeral=True)
+        return
+
     await ensure_balance_table()
     coins = await get_balance(interaction.user.id, interaction.guild_id)
     embed = discord.Embed(
@@ -979,7 +987,15 @@ async def cmd_balance(interaction: discord.Interaction):
 )
 async def cmd_daily(interaction: discord.Interaction):
     await interaction.response.defer()
-    output_channel = bot.bot_settings.get(interaction.guild_id, {}).get("gambling_channel")
+    channel_id = bot.bot_settings.get(interaction.guild_id, {}).get("gambling_channel")
+    if not channel_id:
+        await interaction.followup.send("No gambling channel set.", ephemeral=True)
+        return
+    output_channel = bot.get_channel(int(channel_id))
+    if not output_channel:
+        await interaction.followup.send("Gambling channel not found.", ephemeral=True)
+        return
+
     await ensure_balance_table()
     async with bot.pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -1029,7 +1045,15 @@ async def cmd_daily(interaction: discord.Interaction):
 async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 1):
     await interaction.response.defer()
     await ensure_balance_table()
-    output_channel = bot.bot_settings.get(interaction.guild_id, {}).get("gambling_channel")
+    channel_id = bot.bot_settings.get(interaction.guild_id, {}).get("gambling_channel")
+    if not channel_id:
+        await interaction.followup.send("No gambling channel set.", ephemeral=True)
+        return
+    output_channel = bot.get_channel(int(channel_id))
+    if not output_channel:
+        await interaction.followup.send("Gambling channel not found.", ephemeral=True)
+        return
+
     if amount < 20:
         await interaction.followup.send(
             "Minimum bet is **20** coins.", ephemeral=True
