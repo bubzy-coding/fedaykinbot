@@ -290,7 +290,7 @@ class Bot(commands.Bot):
                 """, message.id, server_id)
                 self.bot_settings[server_id]["scoreboard_message"] = message.id
 
-async def update_scoreboard(self, ctx, conn):
+    async def update_scoreboard(self, ctx, conn):
         guild = ctx.guild
         if guild is None:
             return
