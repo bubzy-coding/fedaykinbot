@@ -908,7 +908,7 @@ async def get_balance(user_id: int, server_id: int) -> int:
 async def update_balance(user_id: int, server_id: int, delta: int):
     async with bot.pool.acquire() as conn:
         await conn.execute("""
-            INSERT INTO donations (user_id, server_id, item, quantity,date,is_adjustment)
+            INSERT INTO donations (user_id, server_id, item, quantity,donation_date,is_adjustment)
             VALUES ($1, $2, 'Gambling Token', $3,NOW(),FALSE)            
         """, user_id, server_id, delta)
 
@@ -1014,7 +1014,7 @@ async def cmd_daily(interaction: discord.Interaction):
                     description=f"Come back in **{hours}h {minutes}m**.",
                     color=discord.Color.red()
                 )
-                await output_channel.send(embed=embed, ephemeral=True)
+                await output_channel.send(embed=embed)
                 return
 
         await conn.execute("""
