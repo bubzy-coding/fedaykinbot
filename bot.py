@@ -975,7 +975,7 @@ async def cmd_balance(interaction: discord.Interaction):
         color=discord.Color.gold()
     )
 
-
+    await interaction.followup.send("Done!", ephemeral=True)
     await output_channel.send(embed=embed)
     
 #    await interaction.response.send_message(embed=embed)
