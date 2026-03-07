@@ -974,7 +974,8 @@ async def cmd_balance(interaction: discord.Interaction):
         description=f"{interaction.user.display_name} has **{coins:,}** coins.",
         color=discord.Color.gold()
     )
-    await interaction.delete_original_response()
+    await interaction.followup.send("Done!", ephemeral=True)
+
     await output_channel.send(embed=embed)
 #    await interaction.response.send_message(embed=embed)
 
@@ -1032,7 +1033,8 @@ async def cmd_daily(interaction: discord.Interaction):
         description=f"You claimed **{DAILY_AMOUNT:,}** coins!\nNew balance: **{coins:,}** coins.",
         color=discord.Color.green()
     )
-    await interaction.delete_original_response()
+    await interaction.followup.send("Done!", ephemeral=True)
+
     await output_channel.send(embed=embed)
 
 
@@ -1109,7 +1111,8 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
         async with bot.pool.acquire() as conn:
             await bot.update_scoreboard(interaction, conn)
 
-        await interaction.delete_original_response()
+        await interaction.followup.send("Done!", ephemeral=True)
+
         await output_channel.send(embed=embed)
 
 
