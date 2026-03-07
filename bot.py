@@ -329,7 +329,7 @@ class Bot(commands.Bot):
 
 
             score_offset = 15
-            for index, item in enumerate(scores):
+            for index, item in enumerate(rows):
                 name = guild.get_member(item["user_id"]).display_name
                 score = item["total_value"]
                 
