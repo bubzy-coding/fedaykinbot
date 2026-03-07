@@ -1121,9 +1121,9 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
     wins = sum(entry["wins"] for entry in message_out)
     losses = sum(entry["losses"] for entry in message_out)
     winnings = sum(entry["winnings"] for entry in message_out)
-    two_oak = sum(1 for entry in message_out if "small win!" in entry["result"])
-    minor_jp = sum(1 for entry in message_out if "**" in entry["result"])
-    jackpot = sum(1 for entry in message_out if "whole" in entry["result"])
+    two_oak = sum(1 for entry in message_out if "small win!" in entry["results"])
+    minor_jp = sum(1 for entry in message_out if "**" in entry["results"])
+    jackpot = sum(1 for entry in message_out if "whole" in entry["results"])
 
     embed = discord.Embed(
             title="🎰 Slot Machine",
