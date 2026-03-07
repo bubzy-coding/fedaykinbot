@@ -897,6 +897,7 @@ async def get_balance(user_id: int, server_id: int) -> int:
                     AND d.donation_date >= $3
                     AND NOT d.is_adjustment
                     AND i.server_id = $4
+                GROUP BY d.user_id
         """, server_id, user_id, period_start, server_id)
 
         if row is None:
