@@ -1,5 +1,6 @@
 import os
 import discord
+import random
 from discord import app_commands
 from discord.ext import commands
 import asyncpg
@@ -153,7 +154,7 @@ def guess_item(user_input: str):
     match = process.extractOne(user_input, ITEMS)
     if match:
         best, score, _ = match
-        if score > 65:   # tune this
+        if score > 90:   # tune this
             return best
     return None
 
@@ -607,7 +608,7 @@ async def on_message(message: discord.Message):
                 guess = guess_item(item_text)
 
                 if guess:
-                    if guess.lower() == item_text.lower():
+                    if guess.lower():# == item_text.lower():
                         if symbol == "+":
                             results.append(f"Donated {abs(qty)} **{guess}**")
                         elif symbol == "-":
@@ -819,6 +820,203 @@ async def sync_items(interaction: discord.Interaction):
             )
 
     await interaction.followup.send(f"Fetched {len(records)} items.")
+
+# ── Slots / balance helpers ────────────────────────────────────────────────────
+
+SLOT_SYMBOLS   = ["🍒", "🍋", "🍊", "🍇", "💎", "7️⃣", "🎰"]
+DAILY_AMOUNT   = 500
+STARTING_COINS = 200
+
+# Payout multipliers (applied to bet amount)
+PAYOUTS = {
+    "7️⃣": 20,
+    "💎": 15,
+    "🎰": 10,
+    "🍇": 6,
+    "🍊": 4,
+    "🍋": 3,
+    "🍒": 2,
+}
+# Two-of-a-kind pays 0.5× bet (net: −0.5 × bet)
+TWO_MATCH_MULTIPLIER = 0.5
+
+async def ensure_balance_table():
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            CREATE TABLE IF NOT EXISTS user_balance (
+                user_id   BIGINT NOT NULL,
+                server_id BIGINT NOT NULL,
+                coins     INTEGER NOT NULL DEFAULT 0,
+                last_daily TIMESTAMPTZ,
+                PRIMARY KEY (user_id, server_id)
+            )
+        """)
+
+
+async def get_balance(user_id: int, server_id: int) -> int:
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT coins FROM user_balance WHERE user_id=$1 AND server_id=$2",
+            user_id, server_id
+        )
+        if row is None:
+            await conn.execute(
+                "INSERT INTO user_balance (user_id, server_id, coins) VALUES ($1, $2, $3)",
+                user_id, server_id, STARTING_COINS
+            )
+            return STARTING_COINS
+        return row["coins"]
+
+
+async def update_balance(user_id: int, server_id: int, delta: int):
+    async with pool.acquire() as conn:
+        await conn.execute("""
+            INSERT INTO user_balance (user_id, server_id, coins)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, server_id)
+            DO UPDATE SET coins = user_balance.coins + $3
+        """, user_id, server_id, delta)
+
+
+def spin_reels() -> list[str]:
+    # Weighted: common symbols appear more, rare ones less
+    weights = [30, 25, 20, 15, 5, 3, 2]
+    return random.choices(SLOT_SYMBOLS, weights=weights, k=3)
+
+
+def calculate_payout(reels: list[str], bet: int) -> tuple[int, str]:
+    a, b, c = reels
+    if a == b == c:
+        mult = PAYOUTS[a]
+        return bet * mult, f"**JACKPOT! 3×{a}** — {mult}× payout!"
+    if a == b or b == c or a == c:
+        winnings = int(bet * TWO_MATCH_MULTIPLIER)
+        pair = a if a == b or a == c else b
+        return winnings, f"Two of a kind {pair} — small win!"
+    return 0, "No match. Better luck next time!"
+
+
+# ── /balance ───────────────────────────────────────────────────────────────────
+
+@bot.tree.command(
+    name="balance",
+    description="Check your coin balance"
+    
+)
+async def cmd_balance(interaction: discord.Interaction):
+    await ensure_balance_table()
+    coins = await get_balance(interaction.user.id, interaction.guild_id)
+    embed = discord.Embed(
+        title="💰 Balance",
+        description=f"{interaction.user.display_name} has **{coins:,}** coins.",
+        color=discord.Color.gold()
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+# ── /daily ─────────────────────────────────────────────────────────────────────
+
+@bot.tree.command(
+    name="daily",
+    description="Claim your daily coin bonus"
+    
+)
+async def cmd_daily(interaction: discord.Interaction):
+    await ensure_balance_table()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT last_daily FROM user_balance WHERE user_id=$1 AND server_id=$2",
+            interaction.user.id, interaction.guild_id
+        )
+        now = datetime.now(timezone.utc)
+        if row and row["last_daily"]:
+            next_claim = row["last_daily"] + timedelta(hours=24)
+            if now < next_claim:
+                remaining = next_claim - now
+                hours, rem = divmod(int(remaining.total_seconds()), 3600)
+                minutes = rem // 60
+                embed = discord.Embed(
+                    title="⏳ Daily already claimed",
+                    description=f"Come back in **{hours}h {minutes}m**.",
+                    color=discord.Color.red()
+                )
+                await interaction.response.send_message(embed=embed, ephemeral=True)
+                return
+
+        await conn.execute("""
+            INSERT INTO user_balance (user_id, server_id, coins, last_daily)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (user_id, server_id)
+            DO UPDATE SET coins = user_balance.coins + $3, last_daily = $4
+        """, interaction.user.id, interaction.guild_id, DAILY_AMOUNT, now)
+
+    coins = await get_balance(interaction.user.id, interaction.guild_id)
+    embed = discord.Embed(
+        title="🎁 Daily Bonus",
+        description=f"You claimed **{DAILY_AMOUNT:,}** coins!\nNew balance: **{coins:,}** coins.",
+        color=discord.Color.green()
+    )
+    await interaction.response.send_message(embed=embed)
+
+
+# ── /slots ─────────────────────────────────────────────────────────────────────
+
+@bot.tree.command(
+    name="slots",
+    description="Spin the slot machine and gamble your coins"
+    
+)
+@app_commands.describe(amount="Number of coins to bet (minimum 10)")
+async def cmd_slots(interaction: discord.Interaction, amount: int):
+    await ensure_balance_table()
+
+    if amount < 10:
+        await interaction.response.send_message(
+            "Minimum bet is **10** coins.", ephemeral=True
+        )
+        return
+
+    coins = await get_balance(interaction.user.id, interaction.guild_id)
+
+    if amount > coins:
+        embed = discord.Embed(
+            title="❌ Insufficient funds",
+            description=f"You only have **{coins:,}** coins.",
+            color=discord.Color.red()
+        )
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+        return
+
+    reels = spin_reels()
+    winnings, result_text = calculate_payout(reels, amount)
+    net = winnings - amount  # negative if loss
+
+    await update_balance(interaction.user.id, interaction.guild_id, net)
+    new_balance = await get_balance(interaction.user.id, interaction.guild_id)
+
+    reel_display = " | ".join(reels)
+
+    if winnings == 0:
+        color = discord.Color.red()
+        outcome = f"-{amount:,} coins"
+    elif winnings < amount:
+        color = discord.Color.orange()
+        outcome = f"-{amount - winnings:,} coins"
+    else:
+        color = discord.Color.green()
+        outcome = f"+{net:,} coins"
+
+    embed = discord.Embed(
+        title="🎰 Slot Machine",
+        color=color
+    )
+    embed.add_field(name="Reels", value=f"**[ {reel_display} ]**", inline=False)
+    embed.add_field(name="Result", value=result_text, inline=False)
+    embed.add_field(name="Outcome", value=outcome, inline=True)
+    embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
+    embed.set_footer(text=f"Bet: {amount:,} coins")
+
+    await interaction.response.send_message(embed=embed)
 
 
 bot.run(TOKEN)
