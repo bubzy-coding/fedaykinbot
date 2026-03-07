@@ -1064,6 +1064,8 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
             "Minimum bet is **20** coins.", ephemeral=True
         )
         return
+    message_out = []
+    
     for spin in range(spins):
         coins = await get_balance(interaction.user.id, interaction.guild_id)
         if amount > coins:
@@ -1077,20 +1079,24 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
             return
 
         reels = spin_reels()
-
+        
         winnings, result_text = calculate_payout(reels, amount)
+        
         if result_text == "won_jackpot":
             winnings = await get_jackpot(interaction.guild_id)
         net = winnings - amount  # negative if loss
-
+        
+        
+        
         await update_balance(interaction.user.id, interaction.guild_id, net)
         new_balance = await get_balance(interaction.user.id, interaction.guild_id)
 
         reel_display = " | ".join(reels)
-
+        
         if winnings == 0:
             color = discord.Color.red()
             outcome = f"-{amount:,} coins"
+            losses 
         elif winnings < amount:
             color = discord.Color.orange()
             outcome = f"-{amount - winnings:,} coins"
@@ -1098,19 +1104,34 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
             color = discord.Color.green()
             outcome = f"+{net:,} coins"
 
-        embed = discord.Embed(
-            title="🎰 Slot Machine",
-            color=color
-        )
         if result_text == "won_jackpot":
             result_text = "You won the whole pot!!!"
-        embed.add_field(name="Reels", value=f"**[ {reel_display} ]**", inline=False)
-        embed.add_field(name="Result", value=result_text, inline=False)
-        embed.add_field(name="Outcome", value=outcome, inline=True)
-        embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
-        embed.set_footer(text=f"Bet: {amount:,} coins")
         
-        await output_channel.send(embed=embed)
+        message_out.append({"spins":spin, "winnings":outcome, "results":result_text, "reeldisplay":reel_display,"wins":wins, "losses":losses})
+
+    total_bet = spins * amount
+    wins = sum(entry["wins"] for entry in message_out)
+    losses = sum(entry["losses"] for entry in message_out)
+    winnings = sum(entry["winnings"] for entry in message_out)
+    two_oak = sum(1 for entry in message_out if "small win!" in entry["result"])
+    minor_jp = sum(1 for entry in message_out if "**" in entry["result"])
+    jackpot = sum(1 for entry in message_out if "whole" in entry["result"])
+
+    embed = discord.Embed(
+            title="🎰 Slot Machine",
+        )
+    
+    embed.add_field(name="Spins", value=str(spins), inline=False)
+    embed.add_field(name="Wins", value=str(wins), inline=False)
+    embed.add_field(name="Losses", value=str(losses), inline=False)
+    embed.add_field(name="Two of a kind", value=str(two_oak), inline=False)
+    embed.add_field(name="Minor Jackpot", value=str(minor_jp), inline=False)
+    embed.add_field(name="Jackpot", value=str(jackpot), inline=False)
+    embed.add_field(name="Total Bet", value=total_bet, inline=True)
+    embed.add_field(name="Balance", value=f"{new_balance:,} coins", inline=True)
+    
+    
+    await output_channel.send(embed=embed)
     await interaction.followup.send("Done!", ephemeral=True)
 
 
