@@ -381,12 +381,6 @@ class Bot(commands.Bot):
                 )
             img.save("leaderboard.png")
 
-            
-        # await interaction.response.send_message(embed=embed)
-            content=discord.File("leaderboard.png")
-
-
-        # --- Check for existing scoreboard message ---
         settings = self.bot_settings.get(server_id)
         if not settings:
             return
@@ -394,7 +388,6 @@ class Bot(commands.Bot):
         message_name = settings.get("scoreboard_message")
 
         if not channel_name:
-            # No scoreboard configured
             logging.info("no channel_name")
             return
 
@@ -404,10 +397,7 @@ class Bot(commands.Bot):
             return
 
         if message_name is None:
-            # Channel set but message not created yet
-            message = await channel.send(content)
-
-
+            message = await channel.send(file=discord.File("leaderboard.png"))
             await conn.execute("""
                 UPDATE bot_settings
                 SET scoreboard_message = $1
@@ -417,11 +407,9 @@ class Bot(commands.Bot):
         else:
             try:
                 message = await channel.fetch_message(int(message_name))
-                await message.edit(content=content)
+                await message.edit(attachments=[discord.File("leaderboard.png")])
             except:
-                # Message deleted manually, recreate
-                message = await channel.send(content)
-
+                message = await channel.send(file=discord.File("leaderboard.png"))
                 await conn.execute("""
                     UPDATE bot_settings
                     SET scoreboard_message = $1
