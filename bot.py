@@ -974,9 +974,10 @@ async def cmd_balance(interaction: discord.Interaction):
         description=f"{interaction.user.display_name} has **{coins:,}** coins.",
         color=discord.Color.gold()
     )
-    await interaction.followup.send("Done!", ephemeral=True)
+
 
     await output_channel.send(embed=embed)
+    
 #    await interaction.response.send_message(embed=embed)
 
 
@@ -1111,10 +1112,10 @@ async def cmd_slots(interaction: discord.Interaction, amount: int, spins: int = 
         async with bot.pool.acquire() as conn:
             await bot.update_scoreboard(interaction, conn)
 
-        await interaction.followup.send("Done!", ephemeral=True)
+        
 
         await output_channel.send(embed=embed)
-
+    await interaction.followup.send("Done!", ephemeral=True)
 
 
 bot.run(TOKEN)
