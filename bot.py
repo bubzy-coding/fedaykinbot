@@ -311,7 +311,7 @@ class Bot(commands.Bot):
             SELECT d.user_id,
                 SUM(d.quantity * i.donation_value) AS total_value
                 FROM donations d
-                JOIN donation_values i ON d.item = i.item_name
+                JOIN donation_values i ON d.item = lower(i.item_name)
                 WHERE d.server_id = $1
                     AND d.donation_date >= $2
                     AND NOT d.is_adjustment
@@ -426,7 +426,7 @@ async def handle_db(symbol, qty, item_name, message: discord.Message, conn):
     server_id = message.guild.id
     user_id = message.author.id
     now = datetime.now(timezone.utc)
-    
+    item_name = item_name.title()
     # -----------------------------
     # + and - (atomic inventory update)
     # -----------------------------

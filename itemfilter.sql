@@ -1,1 +1,1 @@
-select * from slots_jackpot
+
