@@ -151,7 +151,7 @@ def guess_item(user_input: str):
     if not ITEMS:
         return None
 
-    match = process.extractOne(user_input, ITEMS)
+    match = process.extractOne(user_input, ITEMS, processor=str.casefold)
     if match:
         best, score, _ = match
         if score > 90:   # tune this
