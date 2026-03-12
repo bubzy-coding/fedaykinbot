@@ -324,6 +324,10 @@ class Bot(commands.Bot):
         if not rows:
             content = "🏆 **Weekly Scoreboard (since Tuesday)**\n\nNo donations yet."
         else:
+            global img, draw
+            img = Image.new("RGB", (698, 873), background_col)
+            draw = ImageDraw.Draw(img)
+
             draw.rounded_rectangle((0, 0, 700, top_margin-20), radius=10,fill=orange_col)
             top_text = 'Donation Leaderboard'
             top_text_length = bold_font.getlength(top_text) +20
