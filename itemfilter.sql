@@ -1,12 +1,22 @@
-
-
-SELECT d.user_id,
-                SUM(d.quantity * i.donation_value) AS total_value
-                FROM donations d
-                JOIN donation_values i ON d.item = i.item_name
-                WHERE d.server_id = 1466549361432461436
-                    AND d.donation_date >= '2026-03-10'
-                    AND NOT d.is_adjustment
-                    AND i.server_id = 1466549361432461436
-                GROUP BY d.user_id
-                ORDER BY total_value DESC;
+ WITH current_inventory AS (
+                SELECT
+                    server_id,
+                    upper(item_name) as item_name,
+                    sum(quantity) AS stock_qty
+                FROM inventory
+                GROUP BY server_id, item_name
+            )
+            SELECT
+                r.item_name,
+                r.required_quantity,
+                sum(COALESCE(i.stock_qty, 0)) AS stock_qty,
+                r.required_quantity - sum(COALESCE(i.stock_qty, 0)) AS remaining
+            FROM required_items r
+            LEFT JOIN current_inventory i ON i.server_id = r.server_id
+            AND i.item_name = upper(r.item_name)
+            WHERE r.server_id = $1
+            and r.required_quantity >0
+            GROUP BY r.item_name, r.required_quantity
+            ORDER BY r.item_name
+            LIMIT 20;
+            
